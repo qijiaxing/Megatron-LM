@@ -540,16 +540,21 @@ class MMapIndexedDatasetBuilder(object):
     def __init__(self, out_file, dtype=np.int64):
         self._data_file = open(out_file, 'wb')
         self._dtype = dtype
-        self._sizes = []
-        self._doc_idx = [0]
+        self._sizes = []       # Size(len(IDs)) of each sentence
+        self._doc_idx = [0]    # Each doc's starting index in _sizes array
 
     def add_item(self, tensor):
+        """
+          Save tensor as numpy bytes.
+        """
         np_array = np.array(tensor.numpy(), dtype=self._dtype)
         self._data_file.write(np_array.tobytes(order='C'))
         self._sizes.append(np_array.size)
+       #print(f"Added one item, size: {np_array.size}")
 
     def end_document(self):
         self._doc_idx.append(len(self._sizes))
+       #print(f"Doc ends. sizes: {self._sizes}, doc idx: {self._doc_idx}")
 
     def merge_file_(self, another_file):
         # Concatenate index
