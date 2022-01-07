@@ -336,6 +336,12 @@ class WordpieceTokenizer(object):
         self.vocab = vocab
         self.unk_token = unk_token
         self.max_input_chars_per_word = max_input_chars_per_word
+        # JQ: collect unknown tokens
+        self.unknowns = set()
+
+    def __del__(self):
+        # JQ: print a empty set, need to fix it
+       #print("Unknown tokens: ", self.unknowns)
 
     def tokenize(self, text):
         """Tokenizes a piece of text into its word pieces.
@@ -386,6 +392,12 @@ class WordpieceTokenizer(object):
 
             if is_bad:
                 output_tokens.append(self.unk_token)
+                # JQ: collect unknown token
+                if False:
+                  if not (substr in self.unknowns):
+                    self.unknowns.add(substr)
+                    print("UNK str: " + substr)
+               #print("unknowns: ", self.unknowns)
             else:
                 output_tokens.extend(sub_tokens)
         return output_tokens
