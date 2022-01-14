@@ -102,13 +102,11 @@ class Encoder(object):
             doc_ids = []   # a list of list
             # 1. Split text into sentences
             # 2. Tokenize sentence into IDs
-           #for sentence in Encoder.splitter.tokenize(text):
             for sentence in Encoder.splitter(text):
                 # TODO remove any sentence with symbols only
                 sentence_ids = Encoder.tokenizer.tokenize(sentence)
                #print(f"Sentence: {sentence}")
-                decoded = Encoder.tokenizer.decode(sentence_ids)
-               #print(f"Decode: {decoded}")
+               #decoded = Encoder.tokenizer.decode(sentence_ids); print(f"Decode: {decoded}")
                #print(f"Sentence IDs:")
                #print(f"{sentence_ids}")
                 if len(sentence_ids) > 0:
