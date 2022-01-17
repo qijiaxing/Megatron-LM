@@ -339,9 +339,11 @@ class WordpieceTokenizer(object):
         # JQ: collect unknown tokens
         self.unknowns = set()
 
+    """
     def __del__(self):
         # JQ: print a empty set, need to fix it
-       #print("Unknown tokens: ", self.unknowns)
+        print("Unknown tokens: ", self.unknowns)
+    """
 
     def tokenize(self, text):
         """Tokenizes a piece of text into its word pieces.
