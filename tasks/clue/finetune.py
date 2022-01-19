@@ -80,6 +80,15 @@ def main():
             return datapath.split('tnews')[-1].strip(
                 '.json').strip('/').replace('_', '-')
 
+    elif args.task == 'AFQMC':
+
+        num_classes = 2
+        from tasks.clue.afqmc import AFQMCDataset as Dataset
+
+        def name_from_datapath(datapath):
+            return datapath.split('afqmc')[-1].strip(
+                '.json').strip('/').replace('_', '-')
+
     else:
         raise NotImplementedError('CLUE task {} is not implemented.'.format(
             args.task))
