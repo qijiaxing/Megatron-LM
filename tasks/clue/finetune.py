@@ -89,6 +89,15 @@ def main():
             return datapath.split('afqmc')[-1].strip(
                 '.json').strip('/').replace('_', '-')
 
+    elif args.task == 'OCNLI':
+
+        num_classes = 3
+        from tasks.clue.ocnli import OCNLIDataset as Dataset
+
+        def name_from_datapath(datapath):
+            return datapath.split('ocnli')[-1].strip(
+                '.json').strip('/').replace('_', '-')
+
     else:
         raise NotImplementedError('CLUE task {} is not implemented.'.format(
             args.task))
