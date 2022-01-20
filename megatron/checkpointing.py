@@ -337,9 +337,24 @@ def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True
                                  checkpoint_name))
                 sys.exit()
 
-    # Check arguments.
-    assert args.consumed_train_samples == 0
-    assert args.consumed_valid_samples == 0
+        # Check arguments.
+        assert args.consumed_train_samples == 0
+        assert args.consumed_valid_samples == 0
+        # JQ: Only load consumed_train_samples if NOT finetune or release
+        if 'args' in state_dict:
+            checkpoint_args = state_dict['args']
+            check_checkpoint_args(checkpoint_args)
+            args.consumed_train_samples = getattr(checkpoint_args,
+                                                  'consumed_train_samples', 0)
+            update_num_microbatches(consumed_samples=args.consumed_train_samples)
+            args.consumed_valid_samples = getattr(checkpoint_args,
+                                                  'consumed_valid_samples', 0)
+        else:
+            print_rank_0('could not find arguments in the checkpoint ...')
+
+    # JQ: Only load consumed_train_samples if NOT finetune or release
+    #   < originally code is placed here >
+    """
     if 'args' in state_dict:
         checkpoint_args = state_dict['args']
         check_checkpoint_args(checkpoint_args)
@@ -350,6 +365,7 @@ def load_checkpoint(model, optimizer, lr_scheduler, load_arg='load', strict=True
                                               'consumed_valid_samples', 0)
     else:
         print_rank_0('could not find arguments in the checkpoint ...')
+    """
 
     # Model.
     if len(model) == 1:
