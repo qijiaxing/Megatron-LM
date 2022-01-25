@@ -35,7 +35,7 @@ except ImportError:
 # modified from https://stackoverflow.com/questions/27441191/splitting-chinese-document-into-sentences
 import re
 def zng(para):
-    for sent in re.findall(u'[^!?。\!\?\n]+[!?。\!\?]?[”’"]*', para, flags=re.U):
+    for sent in re.findall(u'[^!?。\!\?\n]+[!?。\!\?]?[”’" 」 ）]*', para, flags=re.U):
         yield sent
 
 from megatron.tokenizer import build_tokenizer
