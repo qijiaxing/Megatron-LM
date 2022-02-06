@@ -17,6 +17,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
                                              os.path.pardir)))
 import time
+import glob
 
 from tools.preprocess_data_zh import zng
 from megatron.tokenizer import build_tokenizer
@@ -30,10 +31,11 @@ class IdentitySplitter(object):
 class Encoder(object):
     def __init__(self, args):
         self.args = args
+        Encoder.tokenizer = build_tokenizer(self.args)
+        Encoder.unk_id = 0
 
     def initializer(self):
         # Use Encoder class as a container for global data
-        Encoder.tokenizer = build_tokenizer(self.args)
         # JQ: Use Chinese splitter, by default
         Encoder.splitter = zng
 
@@ -43,8 +45,10 @@ class Encoder(object):
         Returns:
           ids: a dict, key is "text", value is a list of token(ID) lists
         """
+
         data = json.loads(json_line)
         book = Counter()
+        bad_sent = list()
         for key in self.args.json_keys:
             text = data[key]
             for sentence in Encoder.splitter(text):
@@ -52,17 +56,24 @@ class Encoder(object):
                 sentence = sentence.replace("（）", '')  # remove ()
                 tokens = Encoder.tokenizer.tokenize(sentence)
 
+                # Save sentences if it has any UNK token
+                if Encoder.unk_id in tokens:
+                  _decoded = Encoder.tokenizer.decode(tokens)
+                  bad_sent.append(_decoded)
+                  bad_sent.append(sentence)
+
                 """
-                tID = 12078
+                tID = 8166
                 if tID in tokens:
                   print(f"Sentence: {sentence}")
                   _decoded = Encoder.tokenizer.decode(tokens); print(f"Decode  : {_decoded.replace(' ', '')}")
+                  exit()
                 """
 
                 if len(tokens) > 0:
                     book.update(tokens)
 
-        return book
+        return book, bad_sent
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -98,7 +109,7 @@ def get_args():
     group = parser.add_argument_group(title='runtime')
     group.add_argument('--workers', type=int, default=16,
                        help='Number of worker processes to launch')
-    group.add_argument('--log-interval', type=int, default=100,
+    group.add_argument('--log-interval', type=int, default=1024,
                        help='Interval between progress updates')
     args = parser.parse_args()
     args.keep_empty = False
@@ -115,31 +126,51 @@ def main():
     args = get_args()
     startup_start = time.time()
 
-    print("Opening input file: ", args.input)
-    fin = open(args.input, 'r', encoding='utf-8')
-
     encoder = Encoder(args)
     pool = multiprocessing.Pool(args.workers, initializer=encoder.initializer)
-    counters = pool.imap(encoder.encode, fin, 25)
-
-    startup_end = time.time()
-    proc_start = time.time()
-    print("Time to startup:", startup_end - startup_start)
+    lines_per_chunk = 128
 
     occured = Counter()
-    for i, c in enumerate(counters, start=1):
-        occured = occured + c
-        if i % args.log_interval == 0:
-            current = time.time()
-            elapsed = current - proc_start
-            print(f"Processed {i} documents", f"({i/elapsed:.2f} docs/s.", file=sys.stderr)
+    bads = list()
+    files = glob.glob(args.input)
+    for filename in files:
+      print("Opening input file: ", filename)
+      proc_start = time.time()
+      fin = open(filename, 'r', encoding='utf-8')
+      counters = pool.imap(encoder.encode, fin, lines_per_chunk)
+      for i, (c, b) in enumerate(counters, start=1):
+          # accumulate counter
+          occured = occured + c
 
-    tokenizer = build_tokenizer(args)
-    vocab_size = tokenizer.vocab_size
+          # collect bads (a list of sentences)
+          bads.extend(b)
+
+          # log progress
+          if i % args.log_interval == 0:
+              current = time.time()
+              elapsed = current - proc_start
+              print(f"Processed {i} documents", f"({i/elapsed:.2f} docs/s.", file=sys.stderr)
+
+    startup_end = time.time()
+    print("Time to startup: {:.2f}".format(startup_end - startup_start))
+
+    # Save sentences with unknown tokens
+    f_bad = open("sentences_unknowns.txt", "w")
+    for s in bads:
+      f_bad.write(s + "\n")
+    f_bad.close()
+    print("Found {} sentences with unknowns tokens".format(len(bads)/2))
+    exit()
+
+    """ print unknows does NOT work for multiprocessing
+    tokenizer = encoder.tokenizer
+    tokenizer.print_unknowns("unknown_tokens.txt")
+    """
+
     print("Save shown tokens and absent tokens.", flush=True)
     f_shown = open("token_shown.txt", "w")
     f_absent = open("token_absent.txt", "w")
-    for token in range(vocab_size):
+    for token in range(tokenizer.vocab_size):
       token_str = tokenizer.decode((token,))
       if token in occured:
         f_shown.write("ID: {:5d}, Token: {}\n".format(token, token_str))
