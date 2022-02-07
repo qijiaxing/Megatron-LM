@@ -160,6 +160,11 @@ class _BertWordPieceTokenizer(AbstractTokenizer):
             ["<extra_id_{}>".format(i) for i in range(vocab_extra_ids)])
         self.add_additional_special_tokens(additional_special_tokens)
 
+    # JQ
+    def print_unknowns(self, filename):
+      self.tokenizer.print_unknowns(filename)
+
+
     def add_token(self, token):
         if token not in self.vocab:
             self.inv_vocab[self.vocab_size] = token

@@ -167,6 +167,10 @@ class FullTokenizer(object):
         self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)
         self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
 
+    # JQ
+    def print_unknowns(self, filename):
+      self.wordpiece_tokenizer.print_unknowns(filename)
+
     def tokenize(self, text):
         split_tokens = []
         for token in self.basic_tokenizer.tokenize(text):
@@ -339,11 +343,15 @@ class WordpieceTokenizer(object):
         # JQ: collect unknown tokens
         self.unknowns = set()
 
-    """
-    def __del__(self):
-        # JQ: print a empty set, need to fix it
-        print("Unknown tokens: ", self.unknowns)
-    """
+    def print_unknowns(self, filename):
+        if self.unknowns:
+          print("Save unknown tokens to {}".format(filename))
+          f = open(filename, 'w')
+          for token in self.unknowns:
+            f.write(token + "\n")
+          f.close()
+        else:
+          print("Unknown token list is empty!")
 
     def tokenize(self, text):
         """Tokenizes a piece of text into its word pieces.
@@ -395,11 +403,8 @@ class WordpieceTokenizer(object):
             if is_bad:
                 output_tokens.append(self.unk_token)
                 # JQ: collect unknown token
-                if False:
-                  if not (substr in self.unknowns):
-                    self.unknowns.add(substr)
-                    print("UNK str: " + substr)
-               #print("unknowns: ", self.unknowns)
+                self.unknowns.add(substr)
+               #print("Found unknown token: {}".format(substr), flush=True)
             else:
                 output_tokens.extend(sub_tokens)
         return output_tokens
