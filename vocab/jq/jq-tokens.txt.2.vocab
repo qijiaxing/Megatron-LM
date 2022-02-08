@@ -1,4 +1,8 @@
+[PAD]
 [UNK]
+[CLS]
+[SEP]
+[MASK]
 !
 "
 #
@@ -10742,10 +10746,6 @@ fishbase
 ‘
 ’
 –
-[PAD]
-[CLS]
-[SEP]
-[MASK]
 渏
 狴
 鍴
