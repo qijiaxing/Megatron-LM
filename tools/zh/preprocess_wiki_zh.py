@@ -33,9 +33,10 @@ except ImportError:
 
 # JQ: split Chinese doc into sentences by regex
 # modified from https://stackoverflow.com/questions/27441191/splitting-chinese-document-into-sentences
+import opencc
 import re
 def zng(para):
-    for sent in re.findall(u'[^!?。\!\?\n]+[!?。\!\?]?[”’" 」 ）]*', para, flags=re.U):
+    for sent in re.findall(u'[^!?。\!\?\n]+[!?。\!\?]?[”’"]*', para, flags=re.U):
         yield sent
 
 from megatron.tokenizer import build_tokenizer
@@ -88,6 +89,9 @@ class Encoder(object):
         else:
             Encoder.splitter = IdentitySplitter()
 
+        # JQ: Use opencc to convert simplified ch to traditional ch
+        Encoder.converter = opencc.OpenCC('s2t.json')
+
     def encode(self, json_line):
         """
           Encode one json line, i.e. one doc
@@ -95,27 +99,28 @@ class Encoder(object):
           ids: a dict, key is "text", value is a list of ID list
         """
         data = json.loads(json_line)
-        ids = {}
+        ids_s = {}
+        ids_t = {}
         for key in self.args.json_keys:
-            text = data[key]
-           #print(f"Text: {text}")
-            doc_ids = []   # a list of list
-            # 1. Split text into sentences
-            # 2. Tokenize sentence into IDs
-            for sentence in Encoder.splitter(text):
-                # TODO remove any sentence with symbols only
-                sentence_ids = Encoder.tokenizer.tokenize(sentence)
-               #print(f"Sentence: {sentence}")
-               #decoded = Encoder.tokenizer.decode(sentence_ids); print(f"Decode: {decoded}")
-               #print(f"Sentence IDs:")
-               #print(f"{sentence_ids}")
-                if len(sentence_ids) > 0:
-                    doc_ids.append(sentence_ids)
-            if len(doc_ids) > 0 and self.args.append_eod:
-                doc_ids[-1].append(Encoder.tokenizer.eod)
-            ids[key] = doc_ids
+            text = data[key]  # assuming simplified Chinese
+            ids_s[key] = self.text2id(text)
+            text_t = Encoder.converter.convert(text)
+            ids_t[key] = self.text2id(text_t)
            #print(f"Doc IDs: {doc_ids}")
-        return ids, len(json_line)
+        return ids_s, ids_t, len(json_line)
+
+    def text2id(self, text):
+      doc_ids = []   # a list of list
+      for sentence in Encoder.splitter(text):
+        sentence_ids = Encoder.tokenizer.tokenize(sentence)
+#print("Sent: ", sentence)
+#print("IDs : ", sentence_ids)
+        if len(sentence_ids) > 0:
+          doc_ids.append(sentence_ids)
+        if len(doc_ids) > 0 and self.args.append_eod:
+          doc_ids[-1].append(Encoder.tokenizer.eod)
+      return doc_ids
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -208,10 +213,11 @@ def main():
     total_bytes_processed = 0
     print("Time to startup:", startup_end - startup_start)
 
-    for i, (doc, bytes_processed) in enumerate(encoded_docs, start=1):
+    for i, (doc_s, doc_t, bytes_processed) in enumerate(encoded_docs, start=1):
         # doc is a dict: ["text"] = a list of list
         total_bytes_processed += bytes_processed
-        for key, sentences in doc.items():
+        for doc in (doc_s, doc_t):
+          for key, sentences in doc.items():
             if len(sentences) == 0:
                 continue
             for sentence in sentences:
