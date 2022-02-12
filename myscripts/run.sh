@@ -1,22 +1,26 @@
 #!/bin/bash
 
 IMAGE=pytorch2108
+MEGATRON=../../..
 
 # VOCAB=vocab/bert-chinese-expanded-vocab.txt   # added a few chinese symbols
-VOCAB=vocab/jq/jq-tokens.txt.2.vocab
-DATA_PREFIX=data/wiki_zh/jq_2_vocab/bert_wiki
+VOCAB=${MEGATRON}/vocab/jq/jq-tokens.txt.2.vocab
+# DATA_PREFIX=data/wiki_zh/jq_2_vocab/bert_wiki
+DATA_PREFIX=${MEGATRON}/data/new2016/small
+KEYS=content
 
-DATA_PATH=${DATA_PREFIX}_text_sentence
-MICRO_BATCH=32
+DATA_PATH=${DATA_PREFIX}_${KEYS}_sentence
+MICRO_BATCH=64
 GPUS_PER_NODE=4
 GLOBAL_BATCH=$((${MICRO_BATCH}*${GPUS_PER_NODE}))
 MAX_SEQ_LEN=64
-MAX_POS_EMB=64
-ITERS=1000000
+MAX_POS_EMB=128
+ITERS=400000
 SAVE_INTERVAL=50000
 TRAIN_VAL_TEST="949,50,1"
-CHECKPOINT_PATH=exp/wiki_jq_2_b${GLOBAL_BATCH}_s${MAX_SEQ_LEN}
+CHECKPOINT_PATH=.
 LOG_PATH=${CHECKPOINT_PATH}/log
+LOGFILE=new2016_small_400k.log
 
 # DDP settings:
 # GPU=0
@@ -58,12 +62,12 @@ OUTPUT_ARGS="--log-interval 100 \
              --activations-checkpoint-method uniform"
 
 # CUDA_VISIBLE_DEVICES=${GPU} \
-mkdir -p ${CHECKPOINT_PATH}
+# mkdir -p ${CHECKPOINT_PATH}
 docker exec ${IMAGE} bash -c "cd `pwd`; \
 python -m torch.distributed.launch $DISTRIBUTED_ARGS \
-       pretrain_bert.py \
+       ${MEGATRON}/pretrain_bert.py \
        ${BERT_ARGS} \
        ${OUTPUT_ARGS} \
        --save ${CHECKPOINT_PATH} \
        --load ${CHECKPOINT_PATH} \
-       --data-path ${DATA_PATH} | tee wiki_jq2_b${GLOBAL_BATCH}_s${MAX_SEQ_LEN}_train.log"
+       --data-path ${DATA_PATH} | tee ${LOGFILE}"
