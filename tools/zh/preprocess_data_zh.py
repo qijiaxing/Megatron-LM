@@ -21,39 +21,14 @@ import multiprocessing
 import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                             os.path.pardir,
                                              os.path.pardir)))
 import time
-
 import torch
-try:
-    import nltk
-    nltk_available = True
-except ImportError:
-    nltk_available = False
-
-# JQ: split Chinese doc into sentences by regex
-# modified from https://stackoverflow.com/questions/27441191/splitting-chinese-document-into-sentences
-import re
-def zng(para):
-    for sent in re.findall(u'[^!?。\!\?\n]+[!?。\!\?]?[”’" 」 ）]*', para, flags=re.U):
-        yield sent
-
 from megatron.tokenizer import build_tokenizer
 from megatron.data import indexed_dataset
 
-
-# https://stackoverflow.com/questions/33139531/preserve-empty-lines-with-nltks-punkt-tokenizer
-class CustomLanguageVars(nltk.tokenize.punkt.PunktLanguageVars):
-
-    _period_context_fmt = r"""
-        \S*                          # some word material
-        %(SentEndChars)s             # a potential sentence ending
-        \s*                       #  <-- THIS is what I changed
-        (?=(?P<after_tok>
-            %(NonWord)s              # either other punctuation
-            |
-            (?P<next_tok>\S+)     #  <-- Normally you would have \s+ here
-        ))"""
+from utils import zng, is_chinese
 
 class IdentitySplitter(object):
     def tokenize(self, *text):
@@ -64,40 +39,26 @@ class Encoder(object):
         self.args = args
 
     def initializer(self):
-        """
-          Create Tokenizer & splitter
-        """
         # Use Encoder class as a container for global data
         Encoder.tokenizer = build_tokenizer(self.args)
         if self.args.split_sentences:
-            if not nltk_available:
-                print("NLTK is not available to split sentences.")
-                exit()
-            splitter = nltk.load("tokenizers/punkt/english.pickle")
-            if self.args.keep_newlines:
-                # this prevents punkt from eating newlines after sentences
-                Encoder.splitter = nltk.tokenize.punkt.PunktSentenceTokenizer(
-                    train_text = splitter._params,
-                    lang_vars = CustomLanguageVars())
-            else:
-                Encoder.splitter = splitter
-
-            # JQ: Use Chinese splitter
             Encoder.splitter = zng
-
         else:
             Encoder.splitter = IdentitySplitter()
 
-    def encode(self, json_line):
-        """
-          Encode one json line, i.e. one doc
-        Returns:
-          ids: a dict, key is "text", value is a list of ID list
-        """
-        data = json.loads(json_line)
+    def encode(self, data):
+        if self.args.json_by_line:
+          data = json.loads(data)
+
+        num_tokens = 0
         ids = {}
         for key in self.args.json_keys:
             text = data[key]
+
+            # JQ: Skip non-chinese text
+            if not is_chinese(text):
+              continue
+
            #print(f"Text: {text}")
             doc_ids = []   # a list of list
             # 1. Split text into sentences
@@ -105,17 +66,21 @@ class Encoder(object):
             for sentence in Encoder.splitter(text):
                 # TODO remove any sentence with symbols only
                 sentence_ids = Encoder.tokenizer.tokenize(sentence)
-               #print(f"Sentence: {sentence}")
-               #decoded = Encoder.tokenizer.decode(sentence_ids); print(f"Decode: {decoded}")
-               #print(f"Sentence IDs:")
-               #print(f"{sentence_ids}")
+
+                if self.args.debug:
+                  print(f"Sentence: {sentence}")
+                  decoded = Encoder.tokenizer.decode(sentence_ids); print(f"Decode: {decoded}")
+
                 if len(sentence_ids) > 0:
+                    num_tokens += len(sentence_ids)
                     doc_ids.append(sentence_ids)
+
             if len(doc_ids) > 0 and self.args.append_eod:
                 doc_ids[-1].append(Encoder.tokenizer.eod)
             ids[key] = doc_ids
-           #print(f"Doc IDs: {doc_ids}")
-        return ids, len(json_line)
+
+        return ids, num_tokens
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -128,6 +93,13 @@ def get_args():
                        help='Split documents into sentences.')
     group.add_argument('--keep-newlines', action='store_true',
                        help='Keep newlines between sentences when splitting.')
+
+    # JQ: select file format
+    group.add_argument('--json-by-line', action='store_true',
+                       help='Each line is a json object')
+    # JQ: debug output
+    group.add_argument('--debug', action='store_true',
+                       help='Each line is a json object')
 
     group = parser.add_argument_group(title='tokenizer')
     group.add_argument('--tokenizer-type', type=str, required=True,
@@ -172,16 +144,23 @@ def main():
     args = get_args()
     startup_start = time.time()
 
-    print("Opening", args.input)
-    fin = open(args.input, 'r', encoding='utf-8')
-
+    """ JQ: not needed by chinese
     if nltk_available and args.split_sentences:
         nltk.download("punkt", quiet=True)
+    """
 
     encoder = Encoder(args)
     tokenizer = build_tokenizer(args)
     pool = multiprocessing.Pool(args.workers, initializer=encoder.initializer)
-    encoded_docs = pool.imap(encoder.encode, fin, 25)
+
+    print("Opening", args.input)
+    fin = open(args.input, 'r', encoding='utf-8')
+    if not args.json_by_line:
+      # File is a list of objs
+      fin = json.load(fin)
+      if args.debug:
+        fin = fin[:args.workers]
+    encoded_docs = pool.imap(encoder.encode, fin, 128)
     #encoded_docs = map(encoder.encode, fin)
 
     level = "document"
@@ -205,12 +184,12 @@ def main():
 
     startup_end = time.time()
     proc_start = time.time()
-    total_bytes_processed = 0
+    total_tokens_processed = 0
     print("Time to startup:", startup_end - startup_start)
 
-    for i, (doc, bytes_processed) in enumerate(encoded_docs, start=1):
+    for i, (doc, tokens_processed) in enumerate(encoded_docs, start=1):
         # doc is a dict: ["text"] = a list of list
-        total_bytes_processed += bytes_processed
+        total_tokens_processed += tokens_processed
         for key, sentences in doc.items():
             if len(sentences) == 0:
                 continue
@@ -222,13 +201,17 @@ def main():
         if i % args.log_interval == 0:
             current = time.time()
             elapsed = current - proc_start
-            mbs = total_bytes_processed/elapsed/1024/1024
+            mbs = total_tokens_processed/elapsed/1024/1024
             print(f"Processed {i} documents",
-                  f"({i/elapsed:.2f} docs/s, {mbs:.2f} MB/s).",
+                  f"({i/elapsed:.2f} docs/s, tokens: {mbs:.2f} Million/s).",
                   file=sys.stderr)
 
     for key in args.json_keys:
         builders[key].finalize(output_idx_files[key])
+        print("Save output to {} and {}".format(
+            output_bin_files[key], output_idx_files[key])
+
+    print("Total number of tokens: {}".format(total_tokens_processed))
 
 if __name__ == '__main__':
     main()
