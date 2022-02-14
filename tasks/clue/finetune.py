@@ -71,6 +71,7 @@ def clue_classification(num_classes, Dataset,
 def main():
     args = get_args()
 
+    args.task = args.task.upper()
     if args.task == 'TNEWS':
 
         num_classes = 15

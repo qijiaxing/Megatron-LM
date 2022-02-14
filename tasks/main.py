@@ -98,6 +98,7 @@ if __name__ == '__main__':
         print("Interleaved pipeline schedule is not yet supported for downstream tasks.")
         exit()
 
+    args.task = args.task.upper()
     if args.task == 'RACE':
         from race.finetune import main
     elif args.task in ['MNLI', 'QQP']:
