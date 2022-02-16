@@ -41,8 +41,8 @@ class AFQMCDataset(GLUEAbstractDataset):
                 # {"sentence1": "花呗咋扫不上", "sentence2": "花呗扫一扫不能付钱", "label": "0"}
                 sample = json.loads(line)
                 uid = total
-                text_a = sample["sentence1"]
-                text_b = sample["sentence2"]
+                text_a = self.to_zh_cn(sample["sentence1"])
+                text_b = self.to_zh_cn(sample["sentence2"])
                 label = int(sample["label"])
 
                 assert ((label == 0) or (label == 1))

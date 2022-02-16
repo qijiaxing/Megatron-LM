@@ -24,6 +24,7 @@ from megatron import print_rank_0
 from tasks.data_utils import build_sample
 from tasks.data_utils import build_tokens_types_paddings_from_text
 
+from zhconv import convert
 
 class GLUEAbstractDataset(ABC, Dataset):
     """GLUE base dataset class."""
@@ -59,6 +60,12 @@ class GLUEAbstractDataset(ABC, Dataset):
         sample = build_sample(ids, types, paddings,
                               raw_sample['label'], raw_sample['uid'])
         return sample
+
+    def to_zh_cn(self, string):
+        """
+          JQ: Convert string to Simplified Chinese
+        """
+        return convert(string, "zh-cn")
 
     @abstractmethod
     def process_samples_from_single_path(self, datapath):
