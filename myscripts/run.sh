@@ -13,6 +13,7 @@ DATA_PATH=${DATA_PREFIX}_${KEYS}_sentence
 MICRO_BATCH=64
 GPUS_PER_NODE=4
 GLOBAL_BATCH=$((${MICRO_BATCH}*${GPUS_PER_NODE}))
+NO_SOP="--bert-no-binary-head"
 MAX_SEQ_LEN=64
 MAX_POS_EMB=128
 ITERS=400000
@@ -38,7 +39,7 @@ DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE \
 
 BERT_ARGS="--num-layers 12 \
            --hidden-size 768 \
-           --num-attention-heads 12 \
+           --num-attention-heads 12 ${NO_SOP} \
            --seq-length ${MAX_SEQ_LEN} \
            --max-position-embeddings ${MAX_POS_EMB} \
            --micro-batch-size ${MICRO_BATCH} \
