@@ -689,7 +689,9 @@ def get_samples_mapping(indexed_dataset,
             verbose,
             2 if binary_head else 1)
         print_rank_0(' > done building samples index maping')
-        np.save(indexmap_filename, samples_mapping, allow_pickle=True)
+        # JQ: use SAVE_SAMPLES_MAPPING to control file saving
+        if os.getenv("SAVE_SAMPLES_MAPPING") == "1":
+          np.save(indexmap_filename, samples_mapping, allow_pickle=True)
         print_rank_0(' > saved the index mapping in {}'.format(
             indexmap_filename))
         # Make sure all the ranks have built the mapping
