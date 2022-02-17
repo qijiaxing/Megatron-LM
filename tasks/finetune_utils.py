@@ -35,6 +35,20 @@ from megatron.utils import calc_params_l2_norm
 from megatron.utils import check_adlr_autoresume_termination
 
 
+# JQ: Examine if model has the tokentype embedding layer
+from megatron.utils import unwrap_model
+from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
+from megatron.model import DistributedDataParallel as LocalDDP
+from megatron.model import Float16Module
+
+def has_tokentype_embeddings(model):
+    unwrapped_model = unwrap_model(model,
+                                   (torchDDP, LocalDDP, Float16Module))
+    if unwrapped_model.language_model.embedding.tokentype_embeddings:
+      return True
+    else:
+      return False
+
 def process_batch(batch):
     """Process batch and produce inputs for the model."""
     args = get_args()
@@ -74,6 +88,10 @@ def _cross_entropy_forward_step(batch, model):
         batch_ = batch
     tokens, types, labels, attention_mask = process_batch(batch_)
     timers('batch-generator').stop()
+
+    # JQ: Disable the tokentype input if model does not have the tokentype embedding layer
+    if not has_tokentype_embeddings(model):
+      types = None
 
     # Forward model.
     output_tensor = model(tokens, attention_mask, tokentype_ids=types)
