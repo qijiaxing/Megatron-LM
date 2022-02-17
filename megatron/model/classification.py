@@ -43,9 +43,15 @@ class Classification(MegatronModule):
         self.post_process = post_process
         init_method = init_method_normal(args.init_method_std)
 
+        # JQ: TODO for finetune, do we need add_pooler??
+        self.add_pooler = args.bert_binary_head
+        self.pooling_sequence_index = 0
+        print_rank_last("Add pooler: {}, when create Classficiation model".format(
+            "True" if self.add_pooler else "False"))
         self.language_model, self._language_model_key = get_language_model(
             num_tokentypes=num_tokentypes,
-            add_pooler=True,
+           #add_pooler=True,
+            add_pooler=self.add_pooler,
             encoder_attn_mask_type=AttnMaskType.padding,
             init_method=init_method,
             scaled_init_method=scaled_init_method_normal(args.init_method_std,
@@ -79,7 +85,12 @@ class Classification(MegatronModule):
         )
 
         if self.post_process:
-            _, pooled_output = lm_output
+            # JQ: Take the first token output as pooler output if no pooler found
+            if self.add_pooler:
+              _, pooled_output = lm_output
+            else:
+              encoder_output = lm_output
+              pooled_output = encoder_output[:, self.pooling_sequence_index, :]
             classification_output = self.classification_dropout(pooled_output)
             classification_logits = self.classification_head(classification_output)
 
