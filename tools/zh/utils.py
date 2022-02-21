@@ -8,7 +8,7 @@ def zng(para):
     for sent in re.findall(u'[^!?。！？\!\?\n]+[!?。\!\?]?[”’" 」 ）]*', para, flags=re.U):
         yield sent
 
-def is_chinese(string):
+def has_chinese(string):
     for ch in string:
         if u'\u4e00' <= ch <= u'\u9fff':
             return True

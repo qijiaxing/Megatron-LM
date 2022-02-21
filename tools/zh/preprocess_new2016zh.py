@@ -20,6 +20,8 @@ import json
 import multiprocessing
 import os
 import sys
+import glob
+import re
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
                                              os.path.pardir,
                                              os.path.pardir)))
@@ -47,24 +49,23 @@ class Encoder(object):
             Encoder.splitter = IdentitySplitter()
 
     def encode(self, data):
-        if self.args.json_by_line:
-          data = json.loads(data)
-
-        num_tokens = 0
+        num_tokens = 0  # tokens processed in this doc
         ids = {}
         for key in self.args.json_keys:
+            ids[key] = list()
             text = data[key]
+           #print(f"Text: {text}")
 
             # JQ: Skip non-chinese text
-            if not hass_chinese(text):
+            if not has_chinese(text):
               continue
 
-           #print(f"Text: {text}")
+            # JQ: Replace "---" or "===" by a single "-"
+            text = re.sub("[-=]{3,}", "-", text)
+
             doc_ids = []   # a list of list
-            # 1. Split text into sentences
-            # 2. Tokenize sentence into IDs
+            doc_size = 0   # number of tokens in the doc
             for sentence in Encoder.splitter(text):
-                # TODO remove any sentence with symbols only
                 sentence_ids = Encoder.tokenizer.tokenize(sentence)
 
                 if self.args.debug:
@@ -72,12 +73,17 @@ class Encoder(object):
                   decoded = Encoder.tokenizer.decode(sentence_ids); print(f"Decode: {decoded}")
 
                 if len(sentence_ids) > 0:
-                    num_tokens += len(sentence_ids)
+                    doc_size += len(sentence_ids)
                     doc_ids.append(sentence_ids)
 
+            # append EOD to the end of doc
             if len(doc_ids) > 0 and self.args.append_eod:
                 doc_ids[-1].append(Encoder.tokenizer.eod)
-            ids[key] = doc_ids
+
+            # JQ: skip short doc
+            if doc_size > self.args.min_doc_length:
+              ids[key] = doc_ids
+              num_tokens += doc_size
 
         return ids, num_tokens
 
@@ -101,6 +107,9 @@ def get_args():
     group.add_argument('--debug', action='store_true',
                        help='Each line is a json object')
 
+    group.add_argument('--min-doc-length', type=int, default=127,
+                       help='Minimum doc length')
+
     group = parser.add_argument_group(title='tokenizer')
     group.add_argument('--tokenizer-type', type=str, required=True,
                        choices=['BertWordPieceLowerCase','BertWordPieceCase',
@@ -123,7 +132,7 @@ def get_args():
     group = parser.add_argument_group(title='runtime')
     group.add_argument('--workers', type=int, default=1,
                        help='Number of worker processes to launch')
-    group.add_argument('--log-interval', type=int, default=1000,
+    group.add_argument('--log-interval', type=int, default=10000,
                        help='Interval between progress updates')
     args = parser.parse_args()
     args.keep_empty = False
@@ -144,24 +153,19 @@ def main():
     args = get_args()
     startup_start = time.time()
 
-    """ JQ: not needed by chinese
-    if nltk_available and args.split_sentences:
-        nltk.download("punkt", quiet=True)
-    """
-
     encoder = Encoder(args)
     tokenizer = build_tokenizer(args)
     pool = multiprocessing.Pool(args.workers, initializer=encoder.initializer)
 
-    print("Opening", args.input)
-    fin = open(args.input, 'r', encoding='utf-8')
-    if not args.json_by_line:
-      # File is a list of objs
-      fin = json.load(fin)
-      if args.debug:
-        fin = fin[:args.workers]
-    encoded_docs = pool.imap(encoder.encode, fin, 128)
-    #encoded_docs = map(encoder.encode, fin)
+    all_samples = []
+    for filename in glob.glob(args.input):
+      print("Opening file: ", filename, flush=True)
+      with open(filename, 'r', encoding='utf-8') as fin:
+        samples = json.load(fin)
+        if args.debug:
+          samples = samples[:args.workers]
+      all_samples.extend(samples)
+    encoded_docs = pool.imap(encoder.encode, all_samples, 128)
 
     level = "document"
     if args.split_sentences:
@@ -171,11 +175,14 @@ def main():
     print(f"Output prefix: {args.output_prefix}")
     output_bin_files = {}
     output_idx_files = {}
+    output_info_files = {}
     builders = {}
     for key in args.json_keys:
         output_bin_files[key] = "{}_{}_{}.bin".format(args.output_prefix,
                                                       key, level)
         output_idx_files[key] = "{}_{}_{}.idx".format(args.output_prefix,
+                                                      key, level)
+        output_info_files[key]= "{}_{}_{}.info".format(args.output_prefix,
                                                       key, level)
         # Create a class MMapIndexedDatasetBuilder(object):
         builders[key] = indexed_dataset.make_builder(output_bin_files[key],
@@ -184,12 +191,12 @@ def main():
 
     startup_end = time.time()
     proc_start = time.time()
-    total_tokens_processed = 0
-    print("Time to startup:", startup_end - startup_start)
+    total_tokens = 0
+    print("Time to startup: {:.2f}".format(startup_end - startup_start))
 
-    for i, (doc, tokens_processed) in enumerate(encoded_docs, start=1):
+    for i, (doc, doc_size) in enumerate(encoded_docs, start=1):
         # doc is a dict: ["text"] = a list of list
-        total_tokens_processed += tokens_processed
+        total_tokens += doc_size
         for key, sentences in doc.items():
             if len(sentences) == 0:
                 continue
@@ -201,7 +208,7 @@ def main():
         if i % args.log_interval == 0:
             current = time.time()
             elapsed = current - proc_start
-            mbs = total_tokens_processed/elapsed/1024/1024
+            mbs = total_tokens / elapsed /1024/1024
             print(f"Processed {i} documents",
                   f"({i/elapsed:.2f} docs/s, tokens: {mbs:.2f} Million/s).",
                   file=sys.stderr)
@@ -209,9 +216,14 @@ def main():
     for key in args.json_keys:
         builders[key].finalize(output_idx_files[key])
         print("Save output to {} and {}".format(
-            output_bin_files[key], output_idx_files[key])
+            output_bin_files[key], output_idx_files[key]))
+        # JQ: Save info files
+        with open(output_info_files[key], 'w') as fout:
+          fout.write("Input file: {}\n".format(args.input))
+          fout.write("Vocab file: {}\n".format(args.vocab_file))
+          fout.write("Total number of docs: {}\n".format(i))
+          fout.write("Total number of tokens: {}\n".format(total_tokens))
 
-    print("Total number of tokens: {}".format(total_tokens_processed))
 
 if __name__ == '__main__':
     main()
