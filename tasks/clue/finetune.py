@@ -73,34 +73,24 @@ def main():
 
     args.task = args.task.upper()
     if args.task == 'TNEWS':
-
         num_classes = 15
         from tasks.clue.tnews import TNEWSDataset as Dataset
-
-        def name_from_datapath(datapath):
-            return datapath.split('tnews')[-1].strip(
-                '.json').strip('/').replace('_', '-')
-
     elif args.task == 'AFQMC':
-
         num_classes = 2
         from tasks.clue.afqmc import AFQMCDataset as Dataset
-
-        def name_from_datapath(datapath):
-            return datapath.split('afqmc')[-1].strip(
-                '.json').strip('/').replace('_', '-')
-
     elif args.task == 'OCNLI':
-
         num_classes = 3
         from tasks.clue.ocnli import OCNLIDataset as Dataset
-
-        def name_from_datapath(datapath):
-            return datapath.split('ocnli')[-1].strip(
-                '.json').strip('/').replace('_', '-')
-
+    elif args.task == 'IFLYTEK':
+        num_classes = 119
+        from tasks.clue.iflytek import IFLYTEKDataset as Dataset
     else:
         raise NotImplementedError('CLUE task {} is not implemented.'.format(
             args.task))
+
+    def name_from_datapath(datapath):
+        task = args.task.lower()
+        return datapath.split(task)[-1].strip(
+            '.json').strip('/').replace('_', '-')
 
     clue_classification(num_classes, Dataset, name_from_datapath)

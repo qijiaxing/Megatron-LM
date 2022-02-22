@@ -110,7 +110,9 @@ if __name__ == '__main__':
     elif args.task in ['RET-FINETUNE-NQ']:
         from orqa.supervised.finetune import main
     # JQ: add CLUE tasks
-    elif args.task in ['TNEWS', 'AFQMC', 'OCNLI']:
+    # 1. add dataset file like clue/tnews.py
+    # 2. edit clue/finetune.py
+    elif args.task in ['TNEWS', 'AFQMC', 'OCNLI', 'IFLYTEK']:
         from clue.finetune import main
     else:
         raise NotImplementedError('Task {} is not implemented.'.format(
