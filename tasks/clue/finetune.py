@@ -84,6 +84,9 @@ def main():
     elif args.task == 'IFLYTEK':
         num_classes = 119
         from tasks.clue.iflytek import IFLYTEKDataset as Dataset
+    elif args.task == 'WSC':
+        num_classes = 2
+        from tasks.clue.wsc import WSCDataset as Dataset
     else:
         raise NotImplementedError('CLUE task {} is not implemented.'.format(
             args.task))

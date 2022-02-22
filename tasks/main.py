@@ -112,7 +112,7 @@ if __name__ == '__main__':
     # JQ: add CLUE tasks
     # 1. add dataset file like clue/tnews.py
     # 2. edit clue/finetune.py
-    elif args.task in ['TNEWS', 'AFQMC', 'OCNLI', 'IFLYTEK']:
+    elif args.task in ['TNEWS', 'AFQMC', 'OCNLI', 'IFLYTEK', 'WSC']:
         from clue.finetune import main
     else:
         raise NotImplementedError('Task {} is not implemented.'.format(
