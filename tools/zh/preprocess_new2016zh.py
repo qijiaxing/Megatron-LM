@@ -32,6 +32,8 @@ from megatron.data import indexed_dataset
 
 from utils import zng, has_chinese
 
+LONG_SEQ_LENGTH = 128
+
 class IdentitySplitter(object):
     def tokenize(self, *text):
         return text
@@ -58,6 +60,7 @@ class Encoder(object):
 
             # JQ: Skip non-chinese text
             if not has_chinese(text):
+             #print("Non zh: {}".format(text))
               continue
 
             # JQ: Replace "---" or "===" by a single "-"
@@ -65,23 +68,29 @@ class Encoder(object):
 
             doc_ids = []   # a list of list
             doc_size = 0   # number of tokens in the doc
+            doc_is_good = True
             for sentence in Encoder.splitter(text):
                 sentence_ids = Encoder.tokenizer.tokenize(sentence)
+                s_length = len(sentence_ids)
+
+                # JQ: find LONG sentence
+                if s_length >= LONG_SEQ_LENGTH:
+                    doc_is_good = False
+                   #print("Long seq: {}".format(sentence))
+
+                if s_length > 0:
+                    doc_size += len(sentence_ids)
+                    doc_ids.append(sentence_ids)
 
                 if self.args.debug:
                   print(f"Sentence: {sentence}")
                   decoded = Encoder.tokenizer.decode(sentence_ids); print(f"Decode: {decoded}")
 
-                if len(sentence_ids) > 0:
-                    doc_size += len(sentence_ids)
-                    doc_ids.append(sentence_ids)
-
             # append EOD to the end of doc
             if len(doc_ids) > 0 and self.args.append_eod:
                 doc_ids[-1].append(Encoder.tokenizer.eod)
 
-            # JQ: skip short doc
-            if doc_size > self.args.min_doc_length:
+            if doc_is_good:
               ids[key] = doc_ids
               num_tokens += doc_size
 
@@ -192,6 +201,7 @@ def main():
     startup_end = time.time()
     proc_start = time.time()
     total_tokens = 0
+    total_docs = 0
     print("Time to startup: {:.2f}".format(startup_end - startup_start))
 
     for i, (doc, doc_size) in enumerate(encoded_docs, start=1):
@@ -205,7 +215,9 @@ def main():
                 builders[key].add_item(torch.IntTensor(sentence))
             # Add a index mark for doc
             builders[key].end_document()
-        if i % args.log_interval == 0:
+            total_docs += 1
+
+        if total_docs % args.log_interval == 0:
             current = time.time()
             elapsed = current - proc_start
             mbs = total_tokens / elapsed /1024/1024
@@ -221,7 +233,7 @@ def main():
         with open(output_info_files[key], 'w') as fout:
           fout.write("Input file: {}\n".format(args.input))
           fout.write("Vocab file: {}\n".format(args.vocab_file))
-          fout.write("Total number of docs: {}\n".format(i))
+          fout.write("Total number of docs: {}\n".format(total_docs))
           fout.write("Total number of tokens: {}\n".format(total_tokens))
 
 
