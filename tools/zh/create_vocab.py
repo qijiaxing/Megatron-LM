@@ -21,9 +21,8 @@ def get_en(filename):
         continue
 
       # exclude entries ending with numbers
-     #if re.match(u'(##)?[a-z]+[a-z]$', token):
+      # TODO exclude non-word token, using nltk words?
       if re.match(u'(##)?[a-z]*[a-z]$', token):
-       #if re.search(u'[^0-9]', token):
           tokens.append(token)
 
   def length(word):

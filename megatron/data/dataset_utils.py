@@ -306,6 +306,12 @@ def create_masked_lm_predictions(tokens,
                     # 10% of the time, replace with random word
                     else:
                         masked_token = vocab_id_list[np_rng.randint(0, len(vocab_id_list))]
+            elif masking_style == "random":
+                # JQ: 90% of the time, replace with random token (except PAD)
+                if np_rng.random() < 0.9:
+                    masked_token = vocab_id_list[np_rng.randint(1, len(vocab_id_list))]
+                else:
+                    masked_token = tokens[index]
             elif masking_style == "t5":
                 masked_token = mask_id
             else:

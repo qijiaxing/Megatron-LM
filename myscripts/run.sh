@@ -13,15 +13,18 @@ DATA_PATH=${DATA_PREFIX}_${KEYS}_sentence
 MICRO_BATCH=64
 GPUS_PER_NODE=4
 GLOBAL_BATCH=$((${MICRO_BATCH}*${GPUS_PER_NODE}))
-NO_SOP="--bert-no-binary-head"
-MAX_SEQ_LEN=64
-MAX_POS_EMB=128
+# NO_SOP="--bert-no-binary-head"
+MASKING=random  # or bert
+MAX_SEQ_LEN=128
+MAX_POS_EMB=512
+LR=1e-3
 ITERS=400000
 SAVE_INTERVAL=50000
 TRAIN_VAL_TEST="949,50,1"
-CHECKPOINT_PATH=.
+CHECKPOINT_PATH=/raid/jqi/nlp/bert/new2016/full_less128/pretrain-checkpoints
+mkdir -p ${CHECKPOINT_PATH}
 LOG_PATH=${CHECKPOINT_PATH}/log
-LOGFILE=new2016_small_400k.log
+LOGFILE=train.log.0
 
 # DDP settings:
 # GPU=0
@@ -43,8 +46,8 @@ BERT_ARGS="--num-layers 12 \
            --seq-length ${MAX_SEQ_LEN} \
            --max-position-embeddings ${MAX_POS_EMB} \
            --micro-batch-size ${MICRO_BATCH} \
-           --lr 0.0001 \
-           --lr-decay-iters 990000 \
+           --lr ${LR} \
+           --lr-decay-iters 390000 \
            --train-iters ${ITERS} \
            --min-lr 0.00001 \
            --lr-warmup-fraction 0.01 \
@@ -65,6 +68,7 @@ OUTPUT_ARGS="--log-interval 100 \
 # CUDA_VISIBLE_DEVICES=${GPU} \
 # mkdir -p ${CHECKPOINT_PATH}
 docker exec ${IMAGE} bash -c "cd `pwd`; \
+MASKING_STYLE=${MASKING} \
 python -m torch.distributed.launch $DISTRIBUTED_ARGS \
        ${MEGATRON}/pretrain_bert.py \
        ${BERT_ARGS} \
