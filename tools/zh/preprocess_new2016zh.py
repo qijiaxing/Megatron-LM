@@ -22,6 +22,7 @@ import os
 import sys
 import glob
 import re
+import random
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
                                              os.path.pardir,
                                              os.path.pardir)))
@@ -30,8 +31,9 @@ import torch
 from megatron.tokenizer import build_tokenizer
 from megatron.data import indexed_dataset
 
-from utils import zng, has_chinese
+from utils import zng, has_chinese, stringQ2B
 
+random.seed(76)
 LONG_SEQ_LENGTH = 128
 
 class IdentitySplitter(object):
@@ -70,6 +72,7 @@ class Encoder(object):
             doc_size = 0   # number of tokens in the doc
             doc_is_good = True
             for sentence in Encoder.splitter(text):
+                sentence = stringQ2B(sentence)
                 sentence_ids = Encoder.tokenizer.tokenize(sentence)
                 s_length = len(sentence_ids)
 
@@ -82,7 +85,7 @@ class Encoder(object):
                     doc_size += len(sentence_ids)
                     doc_ids.append(sentence_ids)
 
-                if self.args.debug:
+                if self.args.debug > 0:
                   print(f"Sentence: {sentence}")
                   decoded = Encoder.tokenizer.decode(sentence_ids); print(f"Decode: {decoded}")
 
@@ -113,7 +116,7 @@ def get_args():
     group.add_argument('--json-by-line', action='store_true',
                        help='Each line is a json object')
     # JQ: debug output
-    group.add_argument('--debug', action='store_true',
+    group.add_argument('--debug', type=int, default=0,
                        help='Each line is a json object')
 
     group.add_argument('--min-doc-length', type=int, default=127,
@@ -171,10 +174,15 @@ def main():
       print("Opening file: ", filename, flush=True)
       with open(filename, 'r', encoding='utf-8') as fin:
         samples = json.load(fin)
-        if args.debug:
-          samples = samples[:args.workers]
       all_samples.extend(samples)
-    encoded_docs = pool.imap(encoder.encode, all_samples, 128)
+    if args.debug > 0:
+      print("Select {} samples for debug!".format(args.debug))
+      first = random.randrange(0, len(all_samples))
+      selected = all_samples[first:first+args.debug]
+      encoded_docs = pool.map(encoder.encode, selected, 4)
+      exit()
+    else:
+      encoded_docs = pool.imap(encoder.encode, all_samples, 128)
 
     level = "document"
     if args.split_sentences:
