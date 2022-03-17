@@ -31,9 +31,8 @@ import torch
 from megatron.tokenizer import build_tokenizer
 from megatron.data import indexed_dataset
 
-from utils import zng, has_chinese, stringQ2B
+from utils import zng, has_chinese, stringQ2B, translate_punct, to_zh_cn
 
-random.seed(76)
 LONG_SEQ_LENGTH = 128
 
 class IdentitySplitter(object):
@@ -67,6 +66,8 @@ class Encoder(object):
 
             # JQ: Replace "---" or "===" by a single "-"
             text = re.sub("[-=]{3,}", "-", text)
+            text = translate_punct(text)
+            text = to_zh_cn(text)
 
             doc_ids = []   # a list of list
             doc_size = 0   # number of tokens in the doc
@@ -86,8 +87,11 @@ class Encoder(object):
                     doc_ids.append(sentence_ids)
 
                 if self.args.debug > 0:
-                  print(f"Sentence: {sentence}")
-                  decoded = Encoder.tokenizer.decode(sentence_ids); print(f"Decode: {decoded}")
+                  decoded = Encoder.tokenizer.decode(sentence_ids)
+                  decoded_sent = ''.join(decoded)
+                  if re.search('UNK', decoded_sent):
+                    print(f"Sentence: {sentence}")
+                    print(f"GOOD: {doc_is_good}, Decode: {decoded_sent}")
 
             # append EOD to the end of doc
             if len(doc_ids) > 0 and self.args.append_eod:
@@ -118,6 +122,8 @@ def get_args():
     # JQ: debug output
     group.add_argument('--debug', type=int, default=0,
                        help='Each line is a json object')
+    group.add_argument('--seed', type=int, default=76,
+                       help='Random seed')
 
     group.add_argument('--min-doc-length', type=int, default=127,
                        help='Minimum doc length')
@@ -163,6 +169,8 @@ def get_args():
 
 def main():
     args = get_args()
+    random.seed(args.seed)
+
     startup_start = time.time()
 
     encoder = Encoder(args)

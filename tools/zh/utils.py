@@ -38,9 +38,14 @@ def stringpartQ2B(ustring):
 punct_dict = {
   '–':'-',   # En Dash (/u2012) -> hyphen
   '—':'-',   # Em Dash (/u2014) -> hyphen
-  '▼':'',    # Black Down-Pointing Triangle (/u25BC)
-  '℃':'摄氏度',    # Degree Celsius (/u2103)
+  '→':'>',   # Rightwards arrow -> >
+  '▎':'|', '▏':'|',   # Left One Quarter, Eighth Block (/u258E, /u258F) -> vertical line
+  '▼':'•', '▲':'•', '■':'•', '□':'•', '▽':'•', '●':'•', # Black Down-Pointing Triangle (/u25BC), Black Square (/u25A0) -> bullet
+  '√':'',
+  '℃':'摄氏度', '°':'度',   # Degree Celsius (/u2103), Degree
+  '∶':':',   # Ratio U+2236 -> :
   '①':'一', '②':'二', '③': '三', '④':'四', '⑤':'五',
+  'Ⅰ':'一', 'Ⅱ':'二', 'Ⅲ': '三', 'Ⅳ':'四', 'Ⅴ':'五',  # Roman numbers I, II, ...
 }
 punct_table = str.maketrans(punct_dict)
 # txt.translate(punct_table)

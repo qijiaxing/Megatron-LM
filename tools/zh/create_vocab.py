@@ -56,6 +56,10 @@ def main():
   cn_tokens = get_ch(cn_filename)
   vocab.extend(cn_tokens)
 
+  cn_punct_filename = "dict/cn_other_chars.txt"
+  cn_punct_tokens = get_tokens(cn_punct_filename)
+  vocab.extend(cn_punct_tokens)
+
   cn_punct_filename = "dict/cn_punct_fullwidth.txt"
   cn_punct_tokens = get_tokens(cn_punct_filename)
   vocab.extend(cn_punct_tokens)
@@ -72,16 +76,21 @@ def main():
   greek_tokens = get_tokens(greek_filename)
   vocab.extend(greek_tokens)
 
+  # Numbers
   years = ['2016', '2017', '2018', '2019', '2020', '2021', '2022']
   num_tokens = list()
   for num in range(101):
     num_tokens.append(str(num))
   for num in years:
     num_tokens.append(str(num))
+  for num in range(21):
+    num_tokens.append('##' + str(num))
   vocab.extend(num_tokens)
 
   print("Size of vocab: {}".format(len(vocab)))
-  save("myzh.vocab", vocab)
+  out_file = 'myzh.vocab'
+  save(out_file, vocab)
+  print("Saved vocab to file: {}".format(out_file))
 
 def test():
   google_vocab = "/home/jqi/work/megatron/vocab/bert-base-chinese-vocab.txt"
