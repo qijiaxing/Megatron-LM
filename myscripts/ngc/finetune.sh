@@ -16,7 +16,7 @@ VOCAB_FILE=${WORKDIR}/vocab/jq/jq-tokens.txt.2.vocab
 PRETRAINED_CHECKPOINT=${WORKDIR}/exp/bert/new2016/full_less128_random
 FINETUNE_DIR=${PRETRAINED_CHECKPOINT}/finetune
 CHECKPOINT_PATH=${FINETUNE_DIR}/${TASK}
-RES=${PRETRAINED_CHECKLPOINT}/${TASK}_results.log
+RES=${PRETRAINED_CHECKPOINT}/${TASK}_results.log
 MAX_SEQ_LEN=128
 LR=2e-4
 if [ ${TASK} == tnews ]; then BATCH=32; else BATCH=16; fi
