@@ -12,7 +12,7 @@ def get_ch(filename):
       tokens.append(token)
   return tokens
 
-def get_en(filename):
+def get_en(filename, max_len=32):
   tokens = list()
   with open(filename, 'r', encoding='utf-8') as fin:
     for line in fin:
@@ -23,7 +23,10 @@ def get_en(filename):
       # exclude entries ending with numbers
       # TODO exclude non-word token, using nltk words?
       if re.match(u'(##)?[a-z]*[a-z]$', token):
-          tokens.append(token)
+          if len(token) < max_len:
+            tokens.append(token)
+          else:
+            print("Drop very long token: [{}]".format(token))
 
   def length(word):
     return len(word.replace("##", ''))
@@ -65,7 +68,8 @@ def main():
   vocab.extend(cn_punct_tokens)
 
   google_vocab = "/home/jqi/work/megatron/vocab/bert-base-chinese-vocab.txt"
-  en_tokens = get_en(google_vocab)
+  max_token_length = 10
+  en_tokens = get_en(google_vocab, max_token_length)
   vocab.extend(en_tokens)
 
   ascii_symbol_filename = "dict/ascii_symbols.txt"
