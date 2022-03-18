@@ -42,11 +42,14 @@ punct_dict = {
   '▎':'|', '▏':'|',   # Left One Quarter, Eighth Block (/u258E, /u258F) -> vertical line
   '☉':'•', '▼':'•', '▲':'•', '■':'•', '◆':'•', '□':'•', '▽':'•', '●':'•', # Black Down-Pointing Triangle (/u25BC), Black Square (/u25A0) -> bullet
   '√':'',
-  '≥':'>=', '×':'x', '㎡':'平方米',
+  '≥':'>=', '≤':'<=', '×':'x', '㎡':'平方米',
   '℃':'摄氏度', '°':'度',   # Degree Celsius (/u2103), Degree
   '∶':':',   # Ratio U+2236 -> :
   '①':'一', '②':'二', '③': '三', '④':'四', '⑤':'五',
   'Ⅰ':'一', 'Ⅱ':'二', 'Ⅲ': '三', 'Ⅳ':'四', 'Ⅴ':'五',  # Roman numbers I, II, ...
+  '劵':'券',
+  '褔':'福',
+  '臵':'置',
 }
 punct_table = str.maketrans(punct_dict)
 # txt.translate(punct_table)

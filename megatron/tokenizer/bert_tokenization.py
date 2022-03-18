@@ -24,6 +24,8 @@ import re
 import unicodedata
 import six
 
+from .zh_tools import stringQ2B, translate_punct, to_zh_cn
+
 
 def validate_case_matches_checkpoint(do_lower_case, init_checkpoint):
     """Checks whether the casing config is consistent with the checkpoint name."""
@@ -234,20 +236,28 @@ class BasicTokenizer(object):
         text = convert_to_unicode(text)
         text = self._clean_text(text)
 
+        # JQ: Chinese processing
+        text = stringQ2B(text)
+        text = to_zh_cn(text)
+        text = translate_punct(text)
+
         # This was added on November 1st, 2018 for the multilingual and Chinese
         # models. This is also applied to the English models now, but it doesn't
         # matter since the English models were not trained on any Chinese data
         # and generally don't have any Chinese data in them (there are Chinese
         # characters in the vocabulary because Wikipedia does have some Chinese
         # words in the English Wikipedia.).
-        text = self._tokenize_chinese_chars(text)
+        text = self._tokenize_chinese_chars(text)  # JQ: Add space around any CJK chars
 
-        orig_tokens = whitespace_tokenize(text)
+        orig_tokens = whitespace_tokenize(text)    # JQ: split into words by space
+        # JQ: TODO split by continuous numbers, e.g. 3x9
+        # rule = re.compile(r'(\d+)')
+        # rule.split(token)
         split_tokens = []
         for token in orig_tokens:
             if self.do_lower_case:
                 token = token.lower()
-                token = self._run_strip_accents(token)
+                token = self._run_strip_accents(token) # JQ: unicodedata.normalize("NFD")
             split_tokens.extend(self._run_split_on_punc(token))
 
         output_tokens = whitespace_tokenize(" ".join(split_tokens))
