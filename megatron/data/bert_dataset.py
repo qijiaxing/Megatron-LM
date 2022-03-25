@@ -145,7 +145,6 @@ def build_training_sample(sample,
     masking_style = 'random'
     if os.getenv("MASKING_STYLE"):
       masking_style = os.getenv("MASKING_STYLE")
-    print_rank_0('JQ: Use Masking Style: {}'.format(masking_style))
     # Masking.
     max_predictions_per_seq = masked_lm_prob * max_num_tokens
     (tokens, masked_positions, masked_labels, _, _) = create_masked_lm_predictions(

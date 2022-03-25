@@ -89,9 +89,9 @@ class Encoder(object):
                 if self.args.debug > 0:
                   decoded = Encoder.tokenizer.decode(sentence_ids)
                   decoded_sent = ''.join(decoded)
-                  if re.search('UNK', decoded_sent):
+                  if (re.search('UNK', decoded_sent) is not None) & doc_is_good:
                     print(f"Sentence: {sentence}")
-                    print(f"GOOD: {doc_is_good}, Decode: {decoded_sent}")
+                    print(f"Decode: {decoded_sent}")
 
             # append EOD to the end of doc
             if len(doc_ids) > 0 and self.args.append_eod:
@@ -183,6 +183,7 @@ def main():
       with open(filename, 'r', encoding='utf-8') as fin:
         samples = json.load(fin)
       all_samples.extend(samples)
+
     if args.debug > 0:
       print("Select {} samples for debug!".format(args.debug))
       first = random.randrange(0, len(all_samples))

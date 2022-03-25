@@ -41,7 +41,7 @@ punct_dict = {
   '→':'>',   # Rightwards arrow -> >
   '▎':'|', '▏':'|',   # Left One Quarter, Eighth Block (/u258E, /u258F) -> vertical line
   '☉':'•', '▼':'•', '▲':'•', '■':'•', '◆':'•', '□':'•', '▽':'•', '●':'•', # Black Down-Pointing Triangle (/u25BC), Black Square (/u25A0) -> bullet
-  '√':'',
+  '√':'', '↓':'',
   '≥':'>=', '≤':'<=', '×':'x', '㎡':'平方米',
   '℃':'摄氏度', '°':'度',   # Degree Celsius (/u2103), Degree
   '∶':':',   # Ratio U+2236 -> :
@@ -50,6 +50,7 @@ punct_dict = {
   '劵':'券',
   '褔':'福',
   '臵':'置',
+  '徳':'德',
 }
 punct_table = str.maketrans(punct_dict)
 # txt.translate(punct_table)
