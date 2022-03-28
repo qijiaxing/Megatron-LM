@@ -7,7 +7,9 @@ NAME=ml-model.bert-new2016-random
 INSTANCE=dgxa100.40g.4.norm
 IMAGE=nvidia/pytorch:21.08-py3
 
-DATASETID=96766
+DATASETID=96766  # new2016
+DATASETID=97829  # new2016 jqi vocab
+DATASETID=97861  # new2016 clue vocab
 DATASET=/mount/new2016
 WORKSPACE=/mount/megatron
 WORKDIR=${WORKSPACE}/Megatron-LM
@@ -16,7 +18,8 @@ DATA_PREFIX=${DATADIR}/full_less128
 DATAKEY=content
 DATA_PATH=${DATA_PREFIX}_${DATAKEY}_sentence
 # VOCAB=${WORKDIR}/vocab/bert-chinese-expanded-vocab.txt   # added a few chinese symbols
-VOCAB=${WORKDIR}/vocab/jq/jq-tokens.txt.2.vocab
+# VOCAB=${WORKDIR}/vocab/jq/jq-tokens.txt.2.vocab
+VOCAB=${WORKDIR}/vocab/clue.vocab
 
 BATCH_PER_GPU=64
 BATCH=256
@@ -60,7 +63,7 @@ OUTPUT_ARGS="--log-interval 100 \
              --eval-iters 10 \
              --activations-checkpoint-method uniform"
 
-COMMAND="cd ${WORKDIR}; export MASKING_STYLE=${MASKING}; \
+COMMAND="cd ${WORKDIR}; pip install zhconv; export MASKING_STYLE=${MASKING}; \
        python -m torch.distributed.launch $DISTRIBUTED_ARGS pretrain_bert.py \
        ${BERT_ARGS} ${OUTPUT_ARGS} \
        --save ${CHECKPOINT_PATH} \

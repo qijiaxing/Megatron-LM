@@ -4,7 +4,8 @@ IMAGE=pytorch2108
 MEGATRON=../../..
 
 # VOCAB=vocab/bert-chinese-expanded-vocab.txt   # added a few chinese symbols
-VOCAB=${MEGATRON}/vocab/jq/jq-tokens.txt.2.vocab
+# VOCAB=${MEGATRON}/vocab/jq/jq-tokens.txt.2.vocab
+VOCAB=${MEGATRON}/vocab/clue.vocab
 # DATA_PREFIX=data/wiki_zh/jq_2_vocab/bert_wiki
 DATA_PREFIX=${MEGATRON}/data/new2016/small
 KEYS=content
@@ -26,9 +27,6 @@ mkdir -p ${CHECKPOINT_PATH}
 LOG_PATH=${CHECKPOINT_PATH}/log
 LOGFILE=train.log.0
 
-# DDP settings:
-# GPU=0
-# Change for multinode config
 MASTER_ADDR=localhost
 MASTER_PORT=7000
 NNODES=1
@@ -67,7 +65,7 @@ OUTPUT_ARGS="--log-interval 100 \
 
 # CUDA_VISIBLE_DEVICES=${GPU} \
 # mkdir -p ${CHECKPOINT_PATH}
-docker exec ${IMAGE} bash -c "cd `pwd`; \
+docker exec ${IMAGE} bash -c "cd `pwd`; pip install zhconv; \
 MASKING_STYLE=${MASKING} \
 python -m torch.distributed.launch $DISTRIBUTED_ARGS \
        ${MEGATRON}/pretrain_bert.py \
