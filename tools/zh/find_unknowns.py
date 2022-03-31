@@ -14,19 +14,16 @@ import json
 import multiprocessing
 import os
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                             os.path.pardir)))
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+sys.path.append("/home/jqi/work/megatron")
 import time
 import glob
+from tqdm import tqdm
 
-from tools.preprocess_data_zh import zng
+from tools.zh.utils import zng
 from megatron.tokenizer import build_tokenizer
 from collections import Counter
 
-
-class IdentitySplitter(object):
-    def tokenize(self, *text):
-        return text
 
 class Encoder(object):
     def __init__(self, args):
@@ -38,13 +35,13 @@ class Encoder(object):
         # JQ: Use Chinese splitter, by default
         Encoder.splitter = zng
 
-    def encode(self, json_line, book):
+    def encode(self, data, book):
         """
           Encode one json line, i.e. one doc
         Returns:
           ids: a dict, key is "text", value is a list of token(ID) lists
         """
-        data = json.loads(json_line)
+       #data = json.loads(json_line)
        #book = Counter()
         for key in self.args.json_keys:
             text = data[key]
@@ -128,10 +125,10 @@ def main():
     for filename in files:
       print("Opening input file: ", filename)
       start_t = time.time()
-      fin = open(filename, 'r', encoding='utf-8')
-      for line in fin:
-        encoder.encode(line, occured)
-      fin.close()
+      with open(filename, 'r', encoding='utf-8') as fin:
+        samples = json.load(fin)
+        for s in tqdm(samples):
+          encoder.encode(s, occured)
       print("Done processing, time: {}".format(time.time() - start_t))
 
 
@@ -139,8 +136,8 @@ def main():
     tokenizer.print_unknowns("unknown_tokens.txt")
 
     print("Save shown tokens and absent tokens.", flush=True)
-    f_shown = open("token_shown.txt", "w")
-    f_absent = open("token_absent.txt", "w")
+    f_shown = open("token_used.txt", "w")
+    f_absent = open("token_unused.txt", "w")
     for token in range(tokenizer.vocab_size):
       token_str = tokenizer.decode((token,))
       if token in occured:

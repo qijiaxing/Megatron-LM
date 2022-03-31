@@ -118,13 +118,14 @@ with codecs.open(sys.argv[1], 'r', 'utf8') as fin,\
         elif re.match(u'(##)?\d', token):
             cout_num += 1
             if len(token.replace('##', '')) == 1:
-                # print(token)
+                print(token)
                 cout_num_res += 1
                 print(token, file=fout)
             else:
                 cout_num_del += 1
-                # print(token)
+                print(token)
                 continue
+
         elif token.replace('##', '') in zhuyin_char:
             # print(token, file=fout)
             cout_zhuyin += 1
@@ -173,12 +174,3 @@ with codecs.open(sys.argv[1], 'r', 'utf8') as fin,\
     print("cout_jp:{}".format(cout_jp))  #573
     print("cout_ko:{}".format(cout_ko))  #84
     print("cout_em:{}".format(cout_em))  #56
-
-
-
-
-
-
-
-
-

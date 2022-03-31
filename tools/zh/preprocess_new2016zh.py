@@ -31,9 +31,17 @@ import torch
 from megatron.tokenizer import build_tokenizer
 from megatron.data import indexed_dataset
 
-from utils import zng, has_chinese, stringQ2B, translate_punct, to_zh_cn
+from utils import zng, has_chinese
 
-LONG_SEQ_LENGTH = 128
+
+def print_if(target, token_ids):
+  decoded = Encoder.tokenizer.decode(token_ids)
+  decoded_sent = ''.join(decoded)
+  wanted = True
+  wanted = re.search(target, decoded_sent) is not None
+  if wanted:  #& doc_is_good:
+   #print(f"Sentence: {sentence}")
+    print(f"Decode: {decoded_sent}")
 
 class IdentitySplitter(object):
     def tokenize(self, *text):
@@ -56,8 +64,7 @@ class Encoder(object):
         ids = {}
         for key in self.args.json_keys:
             ids[key] = list()
-            text = data[key]
-           #print(f"Text: {text}")
+            text = data[key] #print(f"Text: {text}")
 
             # JQ: Skip non-chinese text
             if not has_chinese(text):
@@ -66,32 +73,28 @@ class Encoder(object):
 
             # JQ: Replace "---" or "===" by a single "-"
             text = re.sub("[-=]{3,}", "-", text)
-            text = translate_punct(text)
-            text = to_zh_cn(text)
+           #text = stringQ2B(text)
+           #text = translate_punct(text)
+           #text = to_zh_cn(text)
 
             doc_ids = []   # a list of list
             doc_size = 0   # number of tokens in the doc
             doc_is_good = True
             for sentence in Encoder.splitter(text):
-                sentence = stringQ2B(sentence)
                 sentence_ids = Encoder.tokenizer.tokenize(sentence)
                 s_length = len(sentence_ids)
 
-                # JQ: find LONG sentence
-                if s_length >= LONG_SEQ_LENGTH:
-                    doc_is_good = False
-                   #print("Long seq: {}".format(sentence))
+                # JQ: exclude doc which has a long sentence
+                if s_length >= self.args.max_sent_length:
+                    doc_is_good = False  #print("Long seq: {}".format(sentence))
 
+                # Add sentence into doc
                 if s_length > 0:
-                    doc_size += len(sentence_ids)
+                    doc_size += s_length
                     doc_ids.append(sentence_ids)
 
                 if self.args.debug > 0:
-                  decoded = Encoder.tokenizer.decode(sentence_ids)
-                  decoded_sent = ''.join(decoded)
-                  if (re.search('UNK', decoded_sent) is not None) & doc_is_good:
-                    print(f"Sentence: {sentence}")
-                    print(f"Decode: {decoded_sent}")
+                  print_if('UNK', sentence_ids)
 
             # append EOD to the end of doc
             if len(doc_ids) > 0 and self.args.append_eod:
@@ -125,8 +128,8 @@ def get_args():
     group.add_argument('--seed', type=int, default=76,
                        help='Random seed')
 
-    group.add_argument('--min-doc-length', type=int, default=127,
-                       help='Minimum doc length')
+    group.add_argument('--max-sent-length', type=int, default=0,
+                       help='Max sentence length')
 
     group = parser.add_argument_group(title='tokenizer')
     group.add_argument('--tokenizer-type', type=str, required=True,

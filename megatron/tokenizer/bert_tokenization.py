@@ -356,10 +356,9 @@ class WordpieceTokenizer(object):
     def print_unknowns(self, filename):
         if self.unknowns:
           print("Save unknown tokens to {}".format(filename))
-          f = open(filename, 'w')
-          for token in self.unknowns:
-            f.write(token + "\n")
-          f.close()
+          with open(filename, 'w') as f:
+            for token in self.unknowns:
+              f.write(token + "\n")
         else:
           print("Unknown token list is empty!")
 
