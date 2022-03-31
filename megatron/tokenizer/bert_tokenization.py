@@ -237,9 +237,9 @@ class BasicTokenizer(object):
         text = self._clean_text(text)
 
         # JQ: Chinese processing
-        text = stringQ2B(text)
-        text = to_zh_cn(text)
-        text = translate_punct(text)
+       #text = stringQ2B(text)
+       #text = to_zh_cn(text)
+       #text = translate_punct(text)
 
         # This was added on November 1st, 2018 for the multilingual and Chinese
         # models. This is also applied to the English models now, but it doesn't

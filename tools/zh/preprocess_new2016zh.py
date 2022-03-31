@@ -73,9 +73,6 @@ class Encoder(object):
 
             # JQ: Replace "---" or "===" by a single "-"
             text = re.sub("[-=]{3,}", "-", text)
-           #text = stringQ2B(text)
-           #text = translate_punct(text)
-           #text = to_zh_cn(text)
 
             doc_ids = []   # a list of list
             doc_size = 0   # number of tokens in the doc
@@ -128,7 +125,7 @@ def get_args():
     group.add_argument('--seed', type=int, default=76,
                        help='Random seed')
 
-    group.add_argument('--max-sent-length', type=int, default=0,
+    group.add_argument('--max-sent-length', type=int, default=128,
                        help='Max sentence length')
 
     group = parser.add_argument_group(title='tokenizer')
@@ -247,7 +244,7 @@ def main():
 
     for key in args.json_keys:
         builders[key].finalize(output_idx_files[key])
-        print("Save output to {} and {}".format(
+        print("Save output to {}\nand {}".format(
             output_bin_files[key], output_idx_files[key]))
         # JQ: Save info files
         with open(output_info_files[key], 'w') as fout:
