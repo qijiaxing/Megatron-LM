@@ -15,6 +15,7 @@
 
 """Processing data for pretraining."""
 
+import itertools
 import json
 import multiprocessing
 import os
@@ -28,11 +29,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
 import time
 import torch
 from megatron.tokenizer import build_tokenizer
-from megatron.data import indexed_dataset
 from megatron.tokenizer.zh_tools import to_zh_cn, zng, has_chinese
+from megatron.data import indexed_dataset
 
 from arguments import get_args
 
+# TODO use logging to replace print
 
 def print_if(target, token_ids):
   decoded = Encoder.tokenizer.decode(token_ids)
@@ -50,6 +52,9 @@ class IdentitySplitter(object):
 class Encoder(object):
     def __init__(self, args):
         self.args = args
+        self.bad_titles = [ '列表', '中華民國總統選舉', '\d+月\d+日']
+        self.bad_text = '（\W*）' + '|formula_\d+' + '|codice_\d+' \
+          + '|&lt;.*&gt;'
 
     def initializer(self):
         # Use Encoder class as a container for global data
@@ -59,47 +64,61 @@ class Encoder(object):
         else:
             Encoder.splitter = IdentitySplitter()
 
-    def encode(self, data):
+    def skip_by_title(self, title):
+        for bad in self.bad_titles:
+          if re.search(bad, title):
+           #print("Skip title: {}".format(title))
+            return True
+        return False
+
+    def process_text(self, text):
+        text = re.sub(self.bad_text, '', text)
+        text = to_zh_cn(text)
+        return text
+
+    def encode(self, line):
+        data = json.loads(line)
         num_tokens = 0  # tokens processed in this doc
         ids = {}
         for key in self.args.json_keys:
-            ids[key] = list()
-            text = data[key] #print(f"Text: {text}")
+            title = data["title"]
+            text = data[key] #;print(f"Text: {text}")
 
-            # JQ: Skip non-chinese text
-            if not has_chinese(text):
-             #print("Non zh: {}".format(text))
-              continue
+            doc_is_good = not self.skip_by_title(title)
 
-            # JQ: Replace "---" or "===" by a single "-"
-            text = re.sub("[-=]{3,}", "-", text)
+            text  = self.process_text(text)
+            if not has_chinese(text): doc_is_good = False
 
-            doc_ids = []   # a list of list
             doc_size = 0   # number of tokens in the doc
-            doc_is_good = True
-            for sentence in Encoder.splitter(text):
-                sentence_ids = Encoder.tokenizer.tokenize(sentence)
-                s_length = len(sentence_ids)
+            doc_ids = []   # a list of list
+            if doc_is_good:
+              for sentence in Encoder.splitter(text):
+                  sentence_ids = Encoder.tokenizer.tokenize(sentence)
+                  s_length = len(sentence_ids)
 
-                # JQ: exclude doc which has a long sentence
-                if s_length >= self.args.max_sent_length:
-                    doc_is_good = False  #print("Long seq: {}".format(sentence))
+                  # JQ: exclude doc which has a long sentence
+                  if s_length >= self.args.max_sent_length:
+                      doc_is_good = False  # ;print("Long Sent: {}".format(sentence))
 
-                # Add sentence into doc
-                if s_length > 0:
-                    doc_size += s_length
-                    doc_ids.append(sentence_ids)
+                  # Add sentence into doc
+                  if s_length > 0:
+                      doc_size += s_length
+                      doc_ids.append(sentence_ids)
 
-                if self.args.debug > 0:
-                  print_if('UNK', sentence_ids)
+                  if self.args.debug > 0:
+                    print_if('UNK', sentence_ids)
 
-            # append EOD to the end of doc
-            if len(doc_ids) > 0 and self.args.append_eod:
-                doc_ids[-1].append(Encoder.tokenizer.eod)
+              # append EOD to the end of doc
+              if len(doc_ids) > 0 and self.args.append_eod:
+                  doc_ids[-1].append(Encoder.tokenizer.eod)
 
+            doc_is_good = (doc_size > self.args.min_doc_length) & doc_is_good
             if doc_is_good:
               ids[key] = doc_ids
               num_tokens += doc_size
+            else:
+             continue
+             #print("Skip short doc [{}]: {}".format(title, text))
 
         return ids, num_tokens
 
@@ -114,21 +133,22 @@ def main():
     tokenizer = build_tokenizer(args)
     pool = multiprocessing.Pool(args.workers, initializer=encoder.initializer)
 
-    all_samples = []
+    lines = list()
     for filename in glob.glob(args.input):
       print("Opening file: ", filename, flush=True)
       with open(filename, 'r', encoding='utf-8') as fin:
-        samples = json.load(fin)
-      all_samples.extend(samples)
+        lines.extend(fin.readlines())
 
     if args.debug > 0:
       print("Select {} samples for debug!".format(args.debug))
       first = random.randrange(0, len(all_samples))
-      selected = all_samples[first:first+args.debug]
+      selected = lines[first:first+args.debug]
       encoded_docs = pool.map(encoder.encode, selected, 4)
       exit()
     else:
-      encoded_docs = pool.imap(encoder.encode, all_samples, 128)
+      encoded_docs = pool.imap(encoder.encode, lines, 128)
+     #encoded_docs = pool.map(encoder.encode, lines, 128)
+     #exit()
 
     level = "document"
     if args.split_sentences:
@@ -141,12 +161,9 @@ def main():
     output_info_files = {}
     builders = {}
     for key in args.json_keys:
-        output_bin_files[key] = "{}_{}_{}.bin".format(args.output_prefix,
-                                                      key, level)
-        output_idx_files[key] = "{}_{}_{}.idx".format(args.output_prefix,
-                                                      key, level)
-        output_info_files[key]= "{}_{}_{}.info".format(args.output_prefix,
-                                                      key, level)
+        output_bin_files[key] = "{}_{}_{}.bin".format(args.output_prefix, key, level)
+        output_idx_files[key] = "{}_{}_{}.idx".format(args.output_prefix, key, level)
+        output_info_files[key]= "{}_{}_{}.info".format(args.output_prefix, key, level)
         # Create a class MMapIndexedDatasetBuilder(object):
         builders[key] = indexed_dataset.make_builder(output_bin_files[key],
                                                impl=args.dataset_impl,
@@ -159,7 +176,6 @@ def main():
     print("Time to startup: {:.2f}".format(startup_end - startup_start))
 
     for i, (doc, doc_size) in enumerate(encoded_docs, start=1):
-        # doc is a dict: ["text"] = a list of list
         total_tokens += doc_size
         for key, sentences in doc.items():
             if len(sentences) == 0:
