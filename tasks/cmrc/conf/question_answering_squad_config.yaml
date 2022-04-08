@@ -1,0 +1,121 @@
+# Question Answering with SQUAD
+name: &name QA
+
+pretrained_model: null
+do_training: true
+trainer:
+  devices: 1 # the number of gpus, 0 for CPU, or list with gpu indices
+  num_nodes: 1
+  max_epochs: 3 # the number of training epochs
+  max_steps: null # precedence over max_epochs
+  accumulate_grad_batches: 1 # accumulates grads every k batches
+  precision: 16 # 16 to use AMP
+  accelerator: gpu
+  strategy: null
+  gradient_clip_val: 0.0
+  val_check_interval: 1.0 # check once per epoch .25 for 4 times per epoch
+  enable_checkpointing: False # provided by exp_manager
+  logger: false # provided by exp_manager
+  num_sanity_val_steps: 0
+  log_every_n_steps: 50  # Interval of logging.
+
+model:
+  nemo_path: null # exported .nemo path
+  dataset:
+    version_2_with_negative: false # If true, the examples contain some that do not have an answer.
+    doc_stride: 128
+    max_query_length: 64
+    max_seq_length: 128
+    max_answer_length: 30
+    null_score_diff_threshold: 0.0
+    # If null_score - best_non_null is greater than the threshold predict null.
+    n_best_size: 20
+    # The total number of n-best predictions to generate at testing.
+    use_cache: true
+    do_lower_case: true
+    # if true does lower case
+
+    num_workers:  2
+    pin_memory: true
+    drop_last: false
+
+  train_ds:
+    file: /home/jqi/work/CLUE/baselines/CLUEdataset/cmrc/tiny.json
+    batch_size: 4 # per GPU
+    shuffle: true
+    num_samples: -1
+    # Default values for the following params are retrieved from dataset config section, but you may override them
+    num_workers: ${model.dataset.num_workers}
+    drop_last: ${model.dataset.drop_last}
+    pin_memory: ${model.dataset.pin_memory}
+
+  validation_ds:
+    file: /home/jqi/work/CLUE/baselines/CLUEdataset/cmrc/tiny.json
+    batch_size: 4 # per GPU
+    shuffle: false
+    num_samples: -1
+    # Default values for the following params are retrieved from dataset config section, but you may override them
+    num_workers: ${model.dataset.num_workers}
+    drop_last: ${model.dataset.drop_last}
+    pin_memory: ${model.dataset.pin_memory}
+
+ #test_ds:
+ #  file: null # .json file
+ #  batch_size: 24 # per GPU
+ #  shuffle: false
+ #  num_samples: -1
+ #  # Default values for the following params are retrieved from dataset config section, but you may override them
+ #  num_workers: ${model.dataset.num_workers}
+ #  drop_last: ${model.dataset.drop_last}
+ #  pin_memory: ${model.dataset.pin_memory}
+
+  tokenizer:
+   #library: megatron
+   #type: BertWordPieceLowerCase
+    tokenizer_name: megatron-bert-uncased
+    vocab_file: /home/jqi/work/megatron/vocab/jq/jq-tokens.txt.2.vocab
+    tokenizer_model: null # only used if tokenizer is sentencepiece
+    special_tokens: null # expand the following to a dictionary if special tokens need to be added.
+
+  language_model:
+    pretrained_model_name: megatron-bert-uncased
+    lm_checkpoint: null
+    config_file: null # json file, precedence over config
+    config: null # if specified initializes model from scratch
+
+  token_classifier:
+    num_layers: 1
+    dropout: 0.0
+    num_classes: 2
+    activation: relu
+    log_softmax: false
+    use_transformer_init: true
+
+  optim:
+    name: adamw
+    lr: 3e-5
+    weight_decay: 0.0
+    sched:
+      name: SquareRootAnnealing
+
+      # pytorch lightning args
+      monitor: val_loss
+      reduce_on_plateau: false
+
+      # scheduler config override
+      warmup_steps: null
+      warmup_ratio: 0.0
+      last_epoch: -1
+
+exp_manager:
+  exp_dir: logs
+  name: *name # name of experiment
+  create_tensorboard_logger: True
+  create_checkpoint_callback: True
+
+hydra:
+  run:
+    dir: .
+  job_logging:
+    root:
+      handlers: null
