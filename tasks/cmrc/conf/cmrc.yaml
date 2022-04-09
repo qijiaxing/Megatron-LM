@@ -1,8 +1,9 @@
 # Question Answering with SQUAD
 name: &name cmrc
-
 pretrained_model: null
 do_training: true
+do_inference: false
+
 trainer:
   devices: 1 # the number of gpus, 0 for CPU, or list with gpu indices
   num_nodes: 1
@@ -23,13 +24,13 @@ model:
   nemo_path: null # resume training
   dataset:
     version_2_with_negative: false # If true, the examples contain some that do not have an answer.
-    doc_stride: 128
+    doc_stride: 256
     max_query_length: 64
-    max_seq_length: 128
+    max_seq_length: 512
     max_answer_length: 30
     null_score_diff_threshold: 0.0
     # If null_score - best_non_null is greater than the threshold predict null.
-    n_best_size: 20
+    n_best_size: 8
     # The total number of n-best predictions to generate at testing.
     use_cache: true
     do_lower_case: true
@@ -39,7 +40,7 @@ model:
 
   train_ds:
     file: /home/jqi/work/CLUE/baselines/CLUEdataset/cmrc/tiny.json
-    batch_size: 4 # per GPU
+    batch_size: 32 # per GPU
     shuffle: true
     num_samples: -1
     # Default values for the following params are retrieved from dataset config section, but you may override them
@@ -49,7 +50,7 @@ model:
 
   validation_ds:
     file: /home/jqi/work/CLUE/baselines/CLUEdataset/cmrc/tiny.json
-    batch_size: 4 # per GPU
+    batch_size: 32 # per GPU
     shuffle: false
     num_samples: -1
     # Default values for the following params are retrieved from dataset config section, but you may override them
@@ -57,15 +58,16 @@ model:
     drop_last: ${model.dataset.drop_last}
     pin_memory: ${model.dataset.pin_memory}
 
- #test_ds:
- #  file: null # .json file
- #  batch_size: 24 # per GPU
- #  shuffle: false
- #  num_samples: -1
- #  # Default values for the following params are retrieved from dataset config section, but you may override them
- #  num_workers: ${model.dataset.num_workers}
- #  drop_last: ${model.dataset.drop_last}
- #  pin_memory: ${model.dataset.pin_memory}
+  test_ds:
+   #file: null # .json file
+    file: /home/jqi/work/CLUE/baselines/CLUEdataset/cmrc/tiny.json
+    batch_size: 32 # per GPU
+    shuffle: false
+    num_samples: -1
+    # Default values for the following params are retrieved from dataset config section, but you may override them
+    num_workers: ${model.dataset.num_workers}
+    drop_last: ${model.dataset.drop_last}
+    pin_memory: ${model.dataset.pin_memory}
 
   tokenizer:
    #library: megatron
@@ -106,7 +108,7 @@ model:
       last_epoch: -1
 
 exp_manager:
-  exp_dir: logs
+  exp_dir: .
   name: *name # name of experiment
   create_tensorboard_logger: True
   create_checkpoint_callback: True

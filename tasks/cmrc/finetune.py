@@ -89,7 +89,7 @@ from nemo.utils import logging
 from nemo.utils.exp_manager import exp_manager
 
 
-@hydra_runner(config_path="conf", config_name="cmrc")
+@hydra_runner(config_path="./", config_name="cmrc")
 def main(cfg: DictConfig) -> None:
     logging.info(f'Config: {OmegaConf.to_yaml(cfg)}')
     trainer = pl.Trainer(**cfg.trainer)
