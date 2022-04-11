@@ -111,20 +111,20 @@ def get_args():
     parser.add_argument("--checkpoint_folder",
         type=str, default=None, required=True, help="Path to Megatron-LM checkpoints saved during training. Ex: /raid/Megatron_LM/checkpoints",)
     parser.add_argument("--checkpoint_name",
-        type=str, default='model_optim_rng.pt', required=True, help="Name of checkpoint to be used. Ex: model_optim_rng.pt",)
+        type=str, default='model_optim_rng.pt', required=False, help="Name of checkpoint to be used. Ex: model_optim_rng.pt",)
     parser.add_argument( "--hparams_file",
-        type=str, default=None, required=False, help="Path config for restoring. Ex: /raid/nemo_experiments/megatron_gpt/hparams.yaml",)
+        type=str, default=None, required=True, help="Path config for restoring. Ex: /raid/nemo_experiments/megatron_gpt/hparams.yaml",)
     parser.add_argument( "--nemo_file_path",
-        type=str, default=None, required=False, help="Path to output .nemo file.")
+        type=str, default=None, required=True, help="Path to output .nemo file.")
     parser.add_argument( "--output_ckpt_file_path",
         type=str, default=None, required=False, help="Path to output .ckpt file.")
 
     parser.add_argument("--gpus_per_node", type=int, required=False, default=1)
-    parser.add_argument("--tensor_model_parallel_size", type=int, required=True, default=1)
+    parser.add_argument("--tensor_model_parallel_size", type=int, required=False, default=1)
     parser.add_argument("--pipeline_model_parallel_size", type=int, required=False, default=1)
     parser.add_argument("--local_rank", type=int, required=False, default=os.getenv('LOCAL_RANK', -1))
 
-    parser.add_argument("--model_type", type=str, required=True, default="bert", choices=["gpt", "t5", "bert"])
+    parser.add_argument("--model_type", type=str, required=False, default="bert", choices=["gpt", "t5", "bert"])
 
     args = parser.parse_args()
     return args
@@ -371,10 +371,11 @@ def convert(local_rank, rank, world_size, args):
     pipeline_model_parallel_size = world_size // args.tensor_model_parallel_size
     assert args.pipeline_model_parallel_size == pipeline_model_parallel_size
 
-    trainer = Trainer(devices=args.gpus_per_node, accelerator='gpu', num_nodes=num_nodes)
+    trainer = Trainer(devices=args.gpus_per_node,
+        accelerator='gpu', num_nodes=num_nodes, max_epochs=1)
 
     # TODO: reach out to PTL For an API-safe local rank override
-    trainer.accelerator.training_type_plugin._local_rank = local_rank
+   #trainer.accelerator.training_type_plugin._local_rank = local_rank
 
     app_state.pipeline_model_parallel_size = args.pipeline_model_parallel_size
     app_state.tensor_model_parallel_size = args.tensor_model_parallel_size
@@ -440,6 +441,8 @@ def convert(local_rank, rank, world_size, args):
         torch.distributed.barrier()
 
     if args.output_ckpt_file_path:
+        logging.info(f'DO NOT support saving ckpt file currently!')
+        '''
         filepath = args.output_ckpt_file_path
         base_dir = pathlib.Path(filepath).parent
         filename_str = pathlib.Path(filepath).name
@@ -457,6 +460,7 @@ def convert(local_rank, rank, world_size, args):
         checkpoint_path_output = inject_model_parallel_rank(os.path.join(base_dir, filename))
         trainer.accelerator.training_type_plugin.checkpoint_io.save_checkpoint(checkpoint, checkpoint_path_output)
         logging.info(f'NeMo model checkpoint files saved to: {args.output_ckpt_file_path}')
+        '''
 
     if args.nemo_file_path:
         if args.model_type == 'gpt':

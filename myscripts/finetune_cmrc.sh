@@ -3,6 +3,7 @@
 IMAGE=pytorch2203
 MEGATRON=/home/jqi/work/megatron
 
+VOCAB=${MEGATRON}/vocab/jq/jq-tokens.txt.2.vocab
 CKPT_DIR=/raid/jqi/nlp/bert/new2016/full_less128/pretrain-checkpoints/iter_0800000/mp_rank_00/
 NEMO_FILE=megatron.bert-base.nemo
 
@@ -18,7 +19,7 @@ fi
 if [ "yes" == "yes" ]; then
 EXE=${MEGATRON}/tools/to-nemo/megatron_lm_ckpt_to_nemo.py
 HPARAMS=${MEGATRON}/tools/to-nemo/hparams.yaml
-CONVERT_MODEL="python -m torch.distributed.launch --nproc_per_node=1 ${EXE} \
+CONVERT_MODEL="torchrun --nproc_per_node=1 ${EXE} \
   --checkpoint_folder ${CKPT_DIR} \
   --checkpoint_name model_optim_rng.pt \
   --nemo_file_path ${NEMO_FILE} \
@@ -28,9 +29,10 @@ fi
 
 # Finetune CMRC
 EXE=${MEGATRON}/tasks/cmrc/finetune.py
-CONFIG=${MEGATRON}/tasks/cmrc/conf/cmrc.yaml
+# CONFIG=${MEGATRON}/tasks/cmrc/conf/cmrc.yaml
 docker exec ${IMAGE} bash -c "cd `pwd`; \
   ${INSTALL_NEMO};  ${CONVERT_MODEL}; \
   CUDA_VISIBLE_DEVICES=3 \
-  python ${EXE} model.language_model.lm_checkpoint=${NEMO_FILE} \
-  --config-name=${CONFIG}"
+  python ${EXE} \
+  model.tokenizer.vocab_file=${VOCAB} \
+  model.language_model.lm_checkpoint=${NEMO_FILE}"
