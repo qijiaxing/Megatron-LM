@@ -21,7 +21,8 @@ cfg:
     library: megatron
     type: BertWordPieceLowerCase
     model: null
-    vocab_file: /home/jqi/work/megatron/vocab/jq/jq-tokens.txt.2.vocab
+   #vocab_file: /home/jqi/work/megatron/vocab/jq/jq-tokens.txt.2.vocab
+    vocab_file: /mount/megatron/Megatron-LM/vocab/jq/jq-tokens.txt.2.vocab
     merge_file: null
     tokenizer_name: bert-base-uncased
     special_tokens: ''
