@@ -2,8 +2,8 @@ cfg:
   micro_batch_size: 64
   tensor_model_parallel_size: 1
   pipeline_model_parallel_size: 1
-  encoder_seq_length: 128
-  max_position_embeddings: 128
+  encoder_seq_length: 512
+  max_position_embeddings: 512
   num_layers: 12
   hidden_size: 768
   ffn_hidden_size: 3072
@@ -40,7 +40,7 @@ cfg:
     data_prefix: ''
     index_mapping_dir: null
     data_impl: mmap
-    splits_string: 900,50,50
+    splits_string: 950,49,1
     seq_length: 128
     skip_warmup: true
     num_workers: 0
