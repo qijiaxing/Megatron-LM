@@ -32,6 +32,7 @@ from megatron.data import indexed_dataset
 from megatron.tokenizer.zh_tools import to_zh_cn, zng, has_chinese
 
 from arguments import get_args
+import fasttext as ft
 
 
 def print_if(target, token_ids):
@@ -50,6 +51,11 @@ class IdentitySplitter(object):
 class Encoder(object):
     def __init__(self, args):
         self.args = args
+        self.lang_model = "/raid/data/nlp-zh/fast-text/lid.176.bin"
+        self.min_prob = 0.8
+        self.min_doc_length = 128
+        self.bad_titles = "百度彩票|乐透|开奖公告|价格表"
+        self.bad_texts = "搜狐汽车"
 
     def initializer(self):
         # Use Encoder class as a container for global data
@@ -58,21 +64,55 @@ class Encoder(object):
             Encoder.splitter = zng
         else:
             Encoder.splitter = IdentitySplitter()
+        # TODO make lang_detector a class
+        Encoder.lang_detector = ft.load_model(self.lang_model)
+
+    def is_zh(self, text):
+        lang, prob = Encoder.lang_detector.predict(text)
+        if lang[0] != '__label__zh':
+          return False
+        if prob[0] < self.min_prob:
+          return False
+        return True
+
+    def is_bad_title(self, title):
+        # Skip bad titles
+        if re.search(self.bad_titles, title):
+          return True
+        return False
+
+    def is_bad_text(self, text):
+        if not self.is_zh(text):
+          return True
+        if re.search(self.bad_texts, text):
+          return True
+        return False
+
+    def fix_text(self, tt):
+        # JQ: Remove useless symbols
+        text = re.sub("[-=]{3,}", "-", tt)
+        text = re.sub("&(nbsp;)+", " ", text)
+        text = re.sub("&(amp;)+", " ", text)
+        return text
+
 
     def encode(self, data):
         num_tokens = 0  # tokens processed in this doc
         ids = {}
         for key in self.args.json_keys:
             ids[key] = list()
-            text = data[key] #print(f"Text: {text}")
+            title = data['title']
+            text = data[key]
 
-            # JQ: Skip non-chinese text
-            if not has_chinese(text):
-             #print("Non zh: {}".format(text))
+            # Skip bad titles
+            if self.is_bad_title(title):
               continue
 
-            # JQ: Replace "---" or "===" by a single "-"
-            text = re.sub("[-=]{3,}", "-", text)
+            # JQ: Skip non-chinese text
+            if self.is_bad_text(text):
+              continue
+
+            text = self.fix_text(text)
 
             doc_ids = []   # a list of list
             doc_size = 0   # number of tokens in the doc
@@ -82,8 +122,7 @@ class Encoder(object):
                 s_length = len(sentence_ids)
 
                 # JQ: exclude doc which has a long sentence
-                if s_length >= self.args.max_sent_length:
-                    doc_is_good = False  #print("Long seq: {}".format(sentence))
+               #if s_length >= self.args.max_sent_length: doc_is_good = False  #print("Long seq: {}".format(sentence))
 
                 # Add sentence into doc
                 if s_length > 0:
@@ -92,6 +131,8 @@ class Encoder(object):
 
                 if self.args.debug > 0:
                   print_if('UNK', sentence_ids)
+            if doc_size < self.min_doc_length:
+              doc_is_good = False
 
             # append EOD to the end of doc
             if len(doc_ids) > 0 and self.args.append_eod:
