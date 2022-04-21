@@ -29,7 +29,7 @@ import time
 import torch
 from megatron.tokenizer import build_tokenizer
 from megatron.data import indexed_dataset
-from megatron.tokenizer.zh_tools import to_zh_cn, zng, has_chinese
+from megatron.tokenizer.zh_tools import to_zh_cn, zng, remove_special_symbols
 
 from arguments import get_args
 import fasttext as ft
@@ -88,13 +88,6 @@ class Encoder(object):
           return True
         return False
 
-    def fix_text(self, tt):
-        # JQ: Remove useless symbols
-        text = re.sub("[-=]{3,}", "-", tt)
-        text = re.sub("&(nbsp;)+", " ", text)
-        text = re.sub("&(amp;)+", " ", text)
-        return text
-
 
     def encode(self, data):
         num_tokens = 0  # tokens processed in this doc
@@ -112,7 +105,8 @@ class Encoder(object):
             if self.is_bad_text(text):
               continue
 
-            text = self.fix_text(text)
+            text = remove_special_symbols(text)
+            text = to_zh_cn(text)
 
             doc_ids = []   # a list of list
             doc_size = 0   # number of tokens in the doc

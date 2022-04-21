@@ -47,6 +47,7 @@ punct_dict = {
   '∶':':',   # Ratio U+2236 -> :
   '①':'一', '②':'二', '③': '三', '④':'四', '⑤':'五',
   'Ⅰ':'一', 'Ⅱ':'二', 'Ⅲ': '三', 'Ⅳ':'四', 'Ⅴ':'五',  # Roman numbers I, II, ...
+  # TODO create a rare char conversion dict
   '劵':'券',
   '褔':'福',
   '臵':'置',
@@ -58,8 +59,17 @@ punct_table = str.maketrans(punct_dict)
 def translate_punct(ustring):
   return ustring.translate(punct_table)
 
+
 def to_zh_cn(string):
     """
       JQ: Convert string to Simplified Chinese
     """
     return convert(string, "zh-cn")
+
+
+def remove_special_symbols(string):
+    text = re.sub("[-=]{3,}", "-", string)
+    text = re.sub("&?(nbsp;)+", " ", text)
+    text = re.sub("&?(amp;)+", " ", text)
+    return text
+
