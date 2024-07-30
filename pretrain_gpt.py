@@ -33,10 +33,8 @@ from megatron.core.models.gpt.gpt_layer_specs import (
 )
 
 # DEBUG: log tensor hook
-import re
-from megatron.debug.hooks import log_tensor_hook, save_tensor_hook
+from megatron.debug.hooks import register_hooks
 from megatron.debug.arguments import add_debug_args
-from transformer_engine.pytorch.module.base import TransformerEngineBaseModule
 
 
 stimer = StragglerDetector()
@@ -103,27 +101,13 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
 
         rank = torch.distributed.get_rank()
         log_fn = lambda string : print(f"[Rank {rank}] {string}")
-        matched_modules = []
-        for name, layer in model.named_modules():
-            if re.search(args.log_tensor_name_pattern, name) \
-                and isinstance(layer, TransformerEngineBaseModule):
-
-                # log tensor hook
-                layer.register_forward_hook(log_tensor_hook(name, args,
-                    args.log_tensor_interval, log_fn, is_fwd=True))
-                layer.register_full_backward_hook(log_tensor_hook(name,
-                    args, args.log_tensor_interval, log_fn, is_fwd=False))
-
-                # save tensor hook
-                if args.save_tensor:
-                    layer.register_forward_hook(save_tensor_hook(
-                        name, args, args.save_tensor_dir, rank,
-                        args.log_tensor_interval, log_fn, is_fwd=True))
-                    layer.register_full_backward_hook(save_tensor_hook(
-                        name, args, args.save_tensor_dir, rank,
-                        args.log_tensor_interval, log_fn, is_fwd=False))
-
-                matched_modules.append(name)
+        matched_modules = register_hooks(model, args,
+                args.log_tensor_name_pattern,
+                args.log_tensor_interval,
+                args.save_tensor,
+                args.save_tensor_dir,
+                rank,
+                log_fn)
 
         if len(matched_modules) > 0:
             print_rank_0(f"For log tensor name pattern: {args.log_tensor_name_pattern}, find the following layers:")

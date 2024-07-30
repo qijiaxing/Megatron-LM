@@ -1,9 +1,11 @@
 import os
+import re
 
 import torch
 import transformer_engine_extensions as tex
 from transformer_engine.common.recipe import Format
 from transformer_engine.pytorch.numerics_debug import fp8_tensor_statistics
+from transformer_engine.pytorch.module.base import TransformerEngineBaseModule
 
 from megatron.debug.utils import remove_zero_rows, qdq, cosine
 
@@ -120,3 +122,32 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
           log_fn(log_str)
 
     return hook
+
+
+def register_hooks(model, args, name_pattern, interval, save_tensor,
+        save_tensor_dir, rank, log_fn):
+    """Register log tensor hook and save tensor hook"""
+
+    matched_modules = []
+    for name, layer in model.named_modules():
+        if re.search(name_pattern, name) \
+            and isinstance(layer, TransformerEngineBaseModule):
+
+            # log tensor hook
+            layer.register_forward_hook(log_tensor_hook(name, args,
+                interval, log_fn, is_fwd=True))
+            layer.register_full_backward_hook(log_tensor_hook(name,
+                args, interval, log_fn, is_fwd=False))
+
+            # save tensor hook
+            if save_tensor:
+                layer.register_forward_hook(save_tensor_hook(
+                    name, args, save_tensor_dir, rank,
+                    interval, log_fn, is_fwd=True))
+                layer.register_full_backward_hook(save_tensor_hook(
+                    name, args, save_tensor_dir, rank,
+                    interval, log_fn, is_fwd=False))
+
+            matched_modules.append(name)
+
+    return matched_modules
