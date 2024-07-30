@@ -32,9 +32,9 @@ from megatron.core.models.gpt.gpt_layer_specs import (
     get_gpt_layer_with_transformer_engine_spec,
 )
 
-# NV: log tensor hook
+# DEBUG: log tensor hook
 import re
-from megatron.debug.hooks import log_tensor_hook
+from megatron.debug.hooks import log_tensor_hook, save_tensor_hook
 from megatron.debug.arguments import add_debug_args
 from transformer_engine.pytorch.module.base import TransformerEngineBaseModule
 
@@ -96,8 +96,7 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
             rotary_base=args.rotary_base
         )
 
-        # DEBUG: add log tensor hooks
-        # TODO: add options into args
+        # DEBUG: add log tensor and save tensor hooks
         print_rank_0(f"Set up Log Tensor Hook:\n"
             f"  name pattern: {args.log_tensor_name_pattern}\n"
             f"  interval: {args.log_tensor_interval}")
@@ -108,11 +107,22 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
         for name, layer in model.named_modules():
             if re.search(args.log_tensor_name_pattern, name) \
                 and isinstance(layer, TransformerEngineBaseModule):
+
                 # log tensor hook
                 layer.register_forward_hook(log_tensor_hook(name, args,
                     args.log_tensor_interval, log_fn, is_fwd=True))
                 layer.register_full_backward_hook(log_tensor_hook(name,
                     args, args.log_tensor_interval, log_fn, is_fwd=False))
+
+                # save tensor hook
+                if args.save_tensor:
+                    layer.register_forward_hook(save_tensor_hook(
+                        name, args, args.save_tensor_dir, rank,
+                        args.log_tensor_interval, log_fn, is_fwd=True))
+                    layer.register_full_backward_hook(save_tensor_hook(
+                        name, args, args.save_tensor_dir, rank,
+                        args.log_tensor_interval, log_fn, is_fwd=False))
+
                 matched_modules.append(name)
 
         if len(matched_modules) > 0:
