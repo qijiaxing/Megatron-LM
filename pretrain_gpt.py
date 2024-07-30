@@ -35,6 +35,7 @@ from megatron.core.models.gpt.gpt_layer_specs import (
 # NV: log tensor hook
 import re
 from megatron.debug.hooks import log_tensor_hook
+from megatron.debug.arguments import add_debug_args
 from transformer_engine.pytorch.module.base import TransformerEngineBaseModule
 
 
@@ -97,10 +98,12 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
 
         # DEBUG: add log tensor hooks
         # TODO: add options into args
-        args.log_tensor_name_pattern = 'layers\.(0|2|4)\D.*linear_fc1'
-        args.log_tensor_interval = 1
+        print_rank_0(f"Set up Log Tensor Hook:\n"
+            f"  name pattern: {args.log_tensor_name_pattern}\n"
+            f"  interval: {args.log_tensor_interval}")
 
-        log_fn = print_rank_0
+        rank = torch.distributed.get_rank()
+        log_fn = lambda string : print(f"[Rank {rank}] {string}")
         matched_modules = []
         for name, layer in model.named_modules():
             if re.search(args.log_tensor_name_pattern, name) \
@@ -113,11 +116,11 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
                 matched_modules.append(name)
 
         if len(matched_modules) > 0:
-            log_fn(f"For log tensor name pattern: {args.log_tensor_name_pattern}, find the following layers:")
+            print_rank_0(f"For log tensor name pattern: {args.log_tensor_name_pattern}, find the following layers:")
             for l in matched_modules:
-                log_fn(f"  {l}")
+                print_rank_0(f"  {l}")
         else:
-            log_fn(f"No layers found for the log tensor name pattern: {args.log_tensor_name_pattern}")
+            print_rank_0(f"No layers found for the log tensor name pattern: {args.log_tensor_name_pattern}")
 
 
     return model
@@ -277,5 +280,7 @@ if __name__ == "__main__":
         model_provider,
         ModelType.encoder_or_decoder,
         forward_step,
+        # DEBUG: add arguments
+        extra_args_provider=add_debug_args,
         args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
     )
