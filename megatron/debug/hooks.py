@@ -23,7 +23,6 @@ def save_tensor_hook(module_name, trainer, save_dir, rank, interval, log_fn, is_
 
     def hook(module, inputs, outputs):
       """Save input and output tensor to file"""
-#     step = trainer.global_step + 1   # Use step starting from 1
       step = trainer.curr_iteration + 1   # Use step starting from 1
       if ((step) % interval) == 0:
         tensors = {

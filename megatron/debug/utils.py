@@ -6,8 +6,6 @@ import transformer_engine_extensions as tex
 import transformer_engine.pytorch.cpp_extensions as texcpp
 from transformer_engine.pytorch.constants import TE_DType
 
-# from nemo.utils import logging
-
 
 def remove_zero_rows(tensor):
   # Remove all zeros in last dim in a tensor
