@@ -67,5 +67,5 @@ def qdq(inp, meta, fp8_tensor, fp8_format="e4m3"):
 
 def cosine(tensor1, tensor2):
     cosine_sim = torch.nn.functional.cosine_similarity(
-        tensor1.view(-1), tensor2.view(-1), dim=0).item()
+        tensor1.reshape(-1), tensor2.reshape(-1), dim=0).item()
     return cosine_sim
