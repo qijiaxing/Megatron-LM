@@ -101,9 +101,12 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
             t_fp8 = qdq(tensor, module.fp8_meta[fp8_meta_key], fp8_gemm_type[index], fp8_fmt)
 
             # percentage of underflow and overflows
-            pct_underflows, pct_overflows = [ 
-                value * 100.0 / torch.numel(t_fp8)
-                for value in fp8_tensor_statistics(t_fp8, fp8_fmt) ]
+            # for underflows, exclude those existing zeros
+            numel = torch.numel(tensor)
+            num_zeros_bf16 = numel - torch.count_nonzero(tensor)
+            num_zeros_fp8, num_max_fp8 = fp8_tensor_statistics(t_fp8, fp8_fmt)
+            pct_underflows = (num_zeros_fp8 - num_zeros_bf16) * 100.0 / numel
+            pct_overflows = num_max_fp8 * 100.0 / numel
 
             # cos and mse from fp8 quantization
             cos = cosine(tensor, t_fp8)
