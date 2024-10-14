@@ -78,7 +78,7 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
 
         # process each target tensor
         for index, tensor in enumerate(targets):
-          tensor = tensor.detach
+          tensor = tensor.detach()
           # Remove rows of all zeros (in SFT, we see lots of rows of zero in bwd_dy)
           # tensor = remove_zero_rows(tensor.detach())
 
