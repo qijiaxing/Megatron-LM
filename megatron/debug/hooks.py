@@ -68,7 +68,7 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
      #step = trainer.global_step + 1   # Use step starting from 1
       step = trainer.curr_iteration + 1   # Use step starting from 1
       if (step % interval) == 0:
-	
+
         # get target tensor: (fwd_x & fwd_w) or bwd_dy
         targets = [inputs[0] if is_fwd else outputs[0], ]
         if is_fwd:
@@ -78,15 +78,15 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
 
         # process each target tensor
         for index, tensor in enumerate(targets):
+          tensor = tensor.detach
           # Remove rows of all zeros (in SFT, we see lots of rows of zero in bwd_dy)
           # tensor = remove_zero_rows(tensor.detach())
 
           # nonzero abs min and max
-          # nonzero_values = tensor[tensor.nonzero(as_tuple=True)]
-          # log_fn(f"Nonzero shape: {nonzero_values.shape}")
-          nonzero_values = tensor
+          nonzeros = tensor[tensor.nonzero(as_tuple=True)]
+          # nonzeros = tensor
 
-          amin, amax = torch.abs(nonzero_values).aminmax()
+          amin, amax = torch.abs(nonzeros).aminmax()
           # scale from current amax
           act_scale = (Format.HYBRID.value.max_fwd if is_fwd else Format.HYBRID.value.max_bwd) / amax
 
@@ -98,14 +98,15 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
           # FP8 quantization error
           if module.fp8:
             # Q then DQ
-            t_fp8 = qdq(tensor, module.fp8_meta[fp8_meta_key], fp8_gemm_type[index], fp8_fmt)
+            t_fp8 = qdq(nonzeros, module.fp8_meta[fp8_meta_key], fp8_gemm_type[index], fp8_fmt)
 
             # percentage of underflow and overflows
             # for underflows, exclude those existing zeros
             numel = torch.numel(tensor)
-            num_zeros_bf16 = numel - torch.count_nonzero(tensor)
+#           num_zeros_bf16 = numel - torch.count_nonzero(tensor)
             num_zeros_fp8, num_max_fp8 = fp8_tensor_statistics(t_fp8, fp8_fmt)
-            pct_underflows = (num_zeros_fp8 - num_zeros_bf16) * 100.0 / numel
+#           pct_underflows = (num_zeros_fp8 - num_zeros_bf16) * 100.0 / numel
+            pct_underflows = num_zeros_fp8 * 100.0 / numel
             pct_overflows = num_max_fp8 * 100.0 / numel
 
             # cos and mse from fp8 quantization
