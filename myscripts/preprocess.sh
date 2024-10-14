@@ -11,10 +11,16 @@ VOCAB=${MEGATRON}/vocab/jq/jq-tokens.txt.2.vocab
 KEYS=content
 DATA_PREFIX=${MEGATRON}/data/new2016/jq2-vocab/full_less128
 
-MAX_LEN=128
+MAX_LEN=999
 SEED=13
 WORKERS=16
 DEBUG=0
+
+cd ${MEGATRON}; echo Megatron Version:------------
+git log -1
+echo -------------------------------
+cd -
+
 
 # EXE=tools/zh/preprocess_data_zh.py   # For Chinese
 EXE=${MEGATRON}/tools/zh/preprocess_new2016zh.py   # For Chinese

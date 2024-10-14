@@ -7,7 +7,7 @@ cfg:
   num_layers: 12
   hidden_size: 768
   ffn_hidden_size: 3072
-  num_attention_heads: 16
+  num_attention_heads: 12
   init_method_std: 0.02
   hidden_dropout: 0.1
   kv_channels: null
@@ -21,8 +21,8 @@ cfg:
     library: megatron
     type: BertWordPieceLowerCase
     model: null
-   #vocab_file: /home/jqi/work/megatron/vocab/jq/jq-tokens.txt.2.vocab
-    vocab_file: /mount/megatron/Megatron-LM/vocab/jq/jq-tokens.txt.2.vocab
+    vocab_file: /home/jqi/work/megatron/vocab/jq/jq-tokens.txt.2.vocab
+   #vocab_file: /mount/megatron/Megatron-LM/vocab/jq/jq-tokens.txt.2.vocab
     merge_file: null
     tokenizer_name: bert-base-uncased
     special_tokens: ''

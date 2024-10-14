@@ -293,6 +293,7 @@ def load_from_checkpoint(
                 raise ValueError(".csv, .yml or .yaml is required for `hparams_file`")
 
             hparams["on_gpu"] = False
+            # JQ: set vocab here
 
             # overwrite hparams by the given file
             checkpoint[cls.CHECKPOINT_HYPER_PARAMS_KEY] = hparams
