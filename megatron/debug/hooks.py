@@ -110,8 +110,8 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
             pct_overflows = num_max_fp8 * 100.0 / numel
 
             # cos and mse from fp8 quantization
-            cos = cosine(tensor, t_fp8)
-            mse = torch.nn.functional.mse_loss(tensor, t_fp8)
+            cos = cosine(nonzeros, t_fp8)
+            mse = torch.nn.functional.mse_loss(nonzeros, t_fp8)
 
             # scale from meta
             scale = module.fp8_meta[fp8_meta_key].scale[fp8_gemm_type[index]]
