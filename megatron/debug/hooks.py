@@ -150,6 +150,8 @@ def plot_tensor_hook(module_name, trainer, save_dir, rank, interval, log_fn, is_
         for index, tensor in enumerate(targets):
           # Get tensor as numpy
           tensor = tensor.detach().cpu().float().numpy()
+          last_dim = tensor.shape[-1]
+          tensor = tensor.reshape(-1, last_dim)
           # Plot and save figure
           filename = os.path.join(
             save_dir, f'{module_name}.{tensor_name[index]}.step{step}.rank{rank:03d}.png')
