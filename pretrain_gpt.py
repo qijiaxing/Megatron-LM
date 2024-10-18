@@ -106,6 +106,8 @@ def model_provider(pre_process=True, post_process=True) -> Union[GPTModel, megat
                 args.log_tensor_interval,
                 args.save_tensor,
                 args.save_tensor_dir,
+                args.plot_tensor,
+                args.plot_tensor_dir,
                 rank,
                 log_fn)
 

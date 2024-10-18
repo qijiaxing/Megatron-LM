@@ -8,6 +8,7 @@ from transformer_engine.pytorch.numerics_debug import fp8_tensor_statistics
 from transformer_engine.pytorch.module.base import TransformerEngineBaseModule
 
 from megatron.debug.utils import remove_zero_rows, qdq, cosine
+from megatron.debug.plot import plot_activation_distribution
 
 
 def save_tensor_hook(module_name, trainer, save_dir, rank, interval, log_fn, is_fwd=True):
@@ -127,8 +128,39 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
     return hook
 
 
+def plot_tensor_hook(module_name, trainer, save_dir, rank, interval, log_fn, is_fwd=True):
+    """Set up hook for forward or backpropagation"""
+    tensor_name = ['fwd_x', 'fwd_w'] if is_fwd else ['bwd_dy', ]
+
+    def hook(module, inputs, outputs):
+      step = trainer.curr_iteration + 1   # Use step starting from 1
+      if (step % interval) == 0:
+        # get target tensor: (fwd_x & fwd_w) or bwd_dy
+        targets = [inputs[0] if is_fwd else outputs[0], ]
+
+        # TODO: enable weight later on
+        """
+        if is_fwd:
+          for p_name, p_tensor in module.named_parameters(recurse=False):
+            if p_name == "weight":
+              targets.append(p_tensor)
+        """
+
+        # process each target tensor
+        for index, tensor in enumerate(targets):
+          # Get tensor as numpy
+          tensor = tensor.detach().cpu().float().numpy()
+          # Plot and save figure
+          filename = os.path.join(
+            save_dir, f'{module_name}.{tensor_name[index]}.step{step}.rank{rank:03d}.png')
+          plot_activation_distribution(tensor, figurename)
+          log_fn(f'[plot tensor hook] Save tensor plot figure: {filename}')
+
+    return hook
+
+
 def register_hooks(model, args, name_pattern, interval, save_tensor,
-        save_tensor_dir, rank, log_fn):
+        save_tensor_dir, plot_tensor, plot_tensor_dir, rank, log_fn):
     """Register log tensor hook and save tensor hook"""
 
     matched_modules = []
@@ -149,6 +181,15 @@ def register_hooks(model, args, name_pattern, interval, save_tensor,
                     interval, log_fn, is_fwd=True))
                 layer.register_full_backward_hook(save_tensor_hook(
                     name, args, save_tensor_dir, rank,
+                    interval, log_fn, is_fwd=False))
+
+            # plot tensor hook
+            if plot_tensor:
+                layer.register_forward_hook(plot_tensor_hook(
+                    name, args, plot_tensor_dir, rank,
+                    interval, log_fn, is_fwd=True))
+                layer.register_full_backward_hook(plot_tensor_hook(
+                    name, args, plot_tensor_dir, rank,
                     interval, log_fn, is_fwd=False))
 
             matched_modules.append(name)
