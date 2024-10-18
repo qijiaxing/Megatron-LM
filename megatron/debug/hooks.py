@@ -130,7 +130,7 @@ def log_tensor_hook(module_name, trainer, interval, log_fn, is_fwd=True):
 
 def plot_tensor_hook(module_name, trainer, save_dir, rank, interval, log_fn, is_fwd=True):
     """Set up hook for forward or backpropagation"""
-    tensor_name = ['fwd_x', 'fwd_w'] if is_fwd else ['bwd_dy', ]
+    tensor_name = ['fwd_x', ] if is_fwd else ['bwd_dy', ]
 
     def hook(module, inputs, outputs):
       step = trainer.curr_iteration + 1   # Use step starting from 1
@@ -155,7 +155,7 @@ def plot_tensor_hook(module_name, trainer, save_dir, rank, interval, log_fn, is_
           # Plot and save figure
           filename = os.path.join(
             save_dir, f'{module_name}.{tensor_name[index]}.step{step}.rank{rank:03d}.png')
-          plot_activation_distribution(tensor, figurename)
+          plot_activation_distribution(tensor, filename)
           log_fn(f'[plot tensor hook] Save tensor plot figure: {filename}')
 
     return hook
