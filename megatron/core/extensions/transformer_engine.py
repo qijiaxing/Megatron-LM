@@ -1271,6 +1271,39 @@ try:
 
     from transformer_engine.pytorch import Fp8Padding, Fp8Unpadding  # pylint: disable=unused-import
 
+    from transformer_engine.pytorch import Fp8Padding as _Fp8Padding
+    from transformer_engine.pytorch import Fp8Unpadding as _Fp8Unpadding
+
+    class Fp8Padding(_Fp8Padding):
+        """
+        Wrapper for the Transformer-Engine's `Fp8Padding` layer and add `sharded_state_dict`.
+        """
+
+        def __init__(self, num_gemms):
+
+            super().__init__(num_gemms=num_gemms)
+
+        def sharded_state_dict(self, prefix='', sharded_offsets=(), metadata=None):
+            """
+            Fp8Padding layer does not have any parameters.
+            """
+            return {}
+
+    class Fp8Unpadding(_Fp8Unpadding):
+        """
+        Wrapper for the Transformer-Engine's `Fp8Unpadding` layer and add `sharded_state_dict`.
+        """
+
+        def __init__(self, num_gemms):
+
+            super().__init__(num_gemms=num_gemms)
+
+        def sharded_state_dict(self, prefix='', sharded_offsets=(), metadata=None):
+            """
+            Fp8Unpadding layer does not have any parameters.
+            """
+            return {}
+
 except ImportError:
 
     Fp8Padding = None
