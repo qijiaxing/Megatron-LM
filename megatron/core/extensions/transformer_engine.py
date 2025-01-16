@@ -1269,7 +1269,7 @@ except ImportError:
 
 try:
 
-    from transformer_engine.pytorch import Fp8Padding, Fp8Unpadding  # pylint: disable=unused-import
+    # from transformer_engine.pytorch import Fp8Padding, Fp8Unpadding  # pylint: disable=unused-import
 
     from transformer_engine.pytorch import Fp8Padding as _Fp8Padding
     from transformer_engine.pytorch import Fp8Unpadding as _Fp8Unpadding
