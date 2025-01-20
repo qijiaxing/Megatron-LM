@@ -765,7 +765,9 @@ class SequentialMLP(MegatronModule):
     def _pad_tensor_for_fp8(self, hidden):
         """Padding tensor shape to multiples of 16."""
         actual_num_tokens = hidden.shape[0]
-        divisor = 16
+        # JQ: fp8 gemm triton kernel autotune error
+       #divisor = 16
+        divisor = 64
         padded_num_tokens = ceil(actual_num_tokens / divisor) * divisor - actual_num_tokens
         if padded_num_tokens > 0:
             pad_tensor = torch.zeros(
