@@ -795,6 +795,9 @@ class SequentialMLP(MegatronModule):
             output_bias_list = []
 
             for expert, tokens in zip(self.local_experts, tokens_list):
+                # JQ:
+                if (tokens.shape[0] == 0):
+                    continue
                 if self.config.fp8:
                     hidden = self._pad_tensor_for_fp8(tokens)
                     output, output_bias = expert(hidden)
@@ -804,6 +807,11 @@ class SequentialMLP(MegatronModule):
                 output_local_list.append(output)
                 if self.add_bias:
                     output_bias_list.append(output_bias.expand_as(output))
+
+            # JQ:
+            if len(output_local_list) == 0:
+                print(f"No tokens for local experts!")
+                return permuted_local_hidden_states, None
 
             output_local = torch.cat(output_local_list, dim=0)
             if self.add_bias:
