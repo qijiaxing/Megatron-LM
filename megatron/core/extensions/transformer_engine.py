@@ -42,6 +42,20 @@ from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.transformer.utils import make_sharded_tensors_for_checkpoint
 from megatron.core.utils import get_te_version, is_te_min_version
 
+# JQ: import hybrid
+import hybrid
+
+if hybrid.config.should_switch_to_hybrid_linear():
+    LinearImpl = hybrid.Linear
+    LayerNormLinearImpl = hybrid.LayerNormLinear
+    print("Using hybrid Linear")
+    # GroupedLinearImpl = hybrid.GroupedLinear
+else:
+    LinearImpl = te.pytorch.Linear
+    LayerNormLinearImpl = te.pytorch.LayerNormLinear
+    print("Using TE Linear")
+    # GroupedLinearImpl = te.pytorch.GroupedLinear
+
 
 def _get_extra_te_kwargs(config: TransformerConfig):
     extra_transformer_engine_kwargs = {"params_dtype": config.params_dtype}
@@ -92,7 +106,7 @@ class TENorm:
         return instance
 
 
-class TELinear(te.pytorch.Linear):
+class TELinear(LinearImpl):
     """
     Wrapper for the Transformer-Engine's `Linear` layer.
 
@@ -257,7 +271,7 @@ class TELinear(te.pytorch.Linear):
         return out, None
 
 
-class TELayerNormColumnParallelLinear(te.pytorch.LayerNormLinear):
+class TELayerNormColumnParallelLinear(LayerNormLinearImpl):
     """
     Wrapper for the Transformer-Engine's `LayerNormLinear` layer that combines
     layernorm and linear layers
