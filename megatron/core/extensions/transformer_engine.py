@@ -48,13 +48,13 @@ import hybrid
 if hybrid.config.should_switch_to_hybrid_linear():
     LinearImpl = hybrid.Linear
     LayerNormLinearImpl = hybrid.LayerNormLinear
+    GroupedLinearImpl = hybrid.GroupedLinear
     print("Using hybrid Linear")
-    # GroupedLinearImpl = hybrid.GroupedLinear
 else:
     LinearImpl = te.pytorch.Linear
     LayerNormLinearImpl = te.pytorch.LayerNormLinear
+    GroupedLinearImpl = te.pytorch.GroupedLinear
     print("Using TE Linear")
-    # GroupedLinearImpl = te.pytorch.GroupedLinear
 
 
 def _get_extra_te_kwargs(config: TransformerConfig):
@@ -826,7 +826,8 @@ class TEDotProductAttention(te.pytorch.DotProductAttention):
 
 if is_te_min_version("1.9.0.dev0"):
 
-    class TEGroupedLinear(te.pytorch.GroupedLinear):
+    # class TEGroupedLinear(te.pytorch.GroupedLinear):
+    class TEGroupedLinear(GroupedLinearImpl):
         """
         Wrapper for the Transformer-Engine's `GroupedLinear` layer.
 

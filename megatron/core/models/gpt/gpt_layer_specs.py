@@ -39,7 +39,9 @@ try:
     )
 
     HAVE_TE = True
-except ImportError:
+except ImportError as e:
+    # JQ:
+    print(f"Import TE failed! error: {e}")
     HAVE_TE = False
 
 try:
