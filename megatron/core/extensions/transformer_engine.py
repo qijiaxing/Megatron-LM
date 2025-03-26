@@ -934,8 +934,13 @@ if is_te_min_version("1.9.0.dev0"):
                 """
                 Merge multiple "_extra_state" into one.
                 """
-                self.init_fp8_metadata(num_gemms=self.num_gemms)
-                fp8_checkpoint = self.fp8_meta["fp8_checkpoint"] or self.fp8 or self.fp8_calibration
+
+                # JQ: load checkpoint will come here
+                if hybrid.config.should_switch_to_hybrid_linear():
+                    fp8_checkpoint = False
+                else:
+                    self.init_fp8_metadata(num_gemms=self.num_gemms)
+                    fp8_checkpoint = self.fp8_meta["fp8_checkpoint"] or self.fp8 or self.fp8_calibration
 
                 try:
                     state_list = [
@@ -1006,7 +1011,11 @@ if is_te_min_version("1.9.0.dev0"):
                 raise RuntimeError("Unsupported checkpoint format.")
 
         def _split_extra_state(self, state):
-            fp8_checkpoint = self.fp8_meta["fp8_checkpoint"] or self.fp8 or self.fp8_calibration
+            # JQ: save checkpoint will come here
+            if hybrid.config.should_switch_to_hybrid_linear():
+                fp8_checkpoint = False
+            else:
+                fp8_checkpoint = self.fp8_meta["fp8_checkpoint"] or self.fp8 or self.fp8_calibration
 
             if not fp8_checkpoint:
                 return [state] * self.num_gemms
