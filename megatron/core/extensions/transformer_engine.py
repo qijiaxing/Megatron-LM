@@ -1358,7 +1358,12 @@ except ImportError:
 
 try:
 
-    from transformer_engine.pytorch import Fp8Padding, Fp8Unpadding  # pylint: disable=unused-import
+    # JQ: use fp8 padding from hybrid to pad to 128 as required by DeepGEMM
+    if hybrid.config.should_switch_to_hybrid_linear():
+        from hybrid import Fp8Padding, Fp8Unpadding  # pylint: disable=unused-import
+        print("Using hybrid Fp8Padding")
+    else:
+        from transformer_engine.pytorch import Fp8Padding, Fp8Unpadding  # pylint: disable=unused-import
 
 except ImportError:
 
