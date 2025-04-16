@@ -10,19 +10,24 @@ from torch import Tensor
 from megatron.core import parallel_state, tensor_parallel
 from megatron.core.dist_checkpointing.mapping import ShardedStateDict
 from megatron.core.dist_checkpointing.utils import replace_prefix_for_sharding
+from megatron.core.enums import Fp8Recipe
+from megatron.core.fp8_utils import get_fp8_context
 from megatron.core.fusions.fused_layer_norm import FusedLayerNorm
 from megatron.core.inference.contexts import BaseInferenceContext
 from megatron.core.packed_seq_params import PackedSeqParams
+from megatron.core.process_groups_config import ModelCommProcessGroups
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 from megatron.core.transformer.transformer_config import TransformerConfig
-from megatron.core.transformer.transformer_layer import BaseTransformerLayer, TransformerLayer
+from megatron.core.transformer.transformer_layer import (
+    BaseTransformerLayer,
+    get_transformer_layer_offset,
+)
 from megatron.core.transformer.utils import sharded_state_dict_default
-from megatron.core.utils import deprecate_inference_params, make_viewless_tensor
+from megatron.core.utils import WrappedTensor, deprecate_inference_params, make_viewless_tensor
 
 try:
     from megatron.core.extensions.transformer_engine import (
-        TEDelayedScaling,
         TENorm,
         get_cpu_offload_context,
         te_checkpoint,
@@ -112,7 +117,10 @@ def get_num_layers_to_build(config: TransformerConfig) -> int:
         ), "num_layers should be divisible by pipeline_model_parallel_size"
         num_layers_per_pipeline_rank = num_layers // config.pipeline_model_parallel_size
 
-    if parallel_state.get_virtual_pipeline_model_parallel_world_size() is not None:
+    if (
+        parallel_state.get_virtual_pipeline_model_parallel_world_size() is not None
+        and config.pipeline_model_parallel_size > 1
+    ):
         # Interleaved pipeline parallelism:
         # Number of layers in each model chunk is the number of layers in the stage,
         # divided by the number of model chunks in a stage.
@@ -128,7 +136,8 @@ def get_num_layers_to_build(config: TransformerConfig) -> int:
 
         assert (
             num_layers_per_pipeline_rank % vp_size == 0
-        ), "num_layers_per_pipeline_rank should be divisible by vp_size"
+        ), f"num_layers_per_pipeline_rank {num_layers_per_pipeline_rank} \
+            should be divisible by vp_size {vp_size}"
         num_layers_per_virtual_rank = num_layers_per_pipeline_rank // vp_size
 
         num_layers_to_build = num_layers_per_virtual_rank
@@ -219,6 +228,7 @@ class TransformerBlock(MegatronModule):
         post_layer_norm: bool = True,
         pre_process: bool = True,
         post_process: bool = True,
+        model_comm_pgs: ModelCommProcessGroups = None,
     ):
         super().__init__(config=config)
 
@@ -230,7 +240,10 @@ class TransformerBlock(MegatronModule):
         # required for pipeline parallel schedules
         self.input_tensor = None
 
-        self.checkpoint_core_attention = self.config.recompute_granularity == 'selective'
+        self.checkpoint_core_attention = (
+            self.config.recompute_granularity == 'selective'
+            and "core_attn" in self.config.recompute_modules
+        )
 
         if get_cpu_offload_context is not None:
             (self.offload_context, self.group_prefetch_offload_commit_async) = (
@@ -253,9 +266,12 @@ class TransformerBlock(MegatronModule):
             self.offload_context, self.group_prefetch_offload_commit_async = nullcontext(), None
             self.config._cpu_offloading_context = None
 
+        if model_comm_pgs is None:
+            model_comm_pgs = ModelCommProcessGroups.use_mpu_process_groups()
+        self.model_comm_pgs = model_comm_pgs
+
         self._build_layers()
         self.num_layers_per_pipeline_rank = len(self.layers)
-        self.tp_only_amax_red = config.tp_only_amax_red
 
     def _build_layers(self):
         # Transformer layers.
@@ -265,7 +281,23 @@ class TransformerBlock(MegatronModule):
         #     coeff = self.layer_number
         #     self.norm_factor *= coeff
         def build_layer(layer_spec, layer_number):
-            return build_module(layer_spec, config=self.config, layer_number=layer_number)
+            global_layer_number = layer_number + get_transformer_layer_offset(
+                self.config
+            )  # 1-based index
+            if self.config.heterogeneous_block_specs:
+                layer_config = self.config.get_config_for_layer(global_layer_number)
+            else:
+                layer_config = self.config
+
+            fp8_init_context = get_fp8_context(layer_config, global_layer_number - 1, is_init=True)
+            with fp8_init_context:
+                module = build_module(
+                    layer_spec,
+                    config=layer_config,
+                    layer_number=layer_number,
+                    model_comm_pgs=self.model_comm_pgs,
+                )
+            return module
 
         # offset is implicit in TransformerLayer
         self.layers = torch.nn.ModuleList(
@@ -397,7 +429,7 @@ class TransformerBlock(MegatronModule):
 
     def forward(
         self,
-        hidden_states: Tensor,
+        hidden_states: Union[Tensor, WrappedTensor],
         attention_mask: Optional[Tensor],
         context: Optional[Tensor] = None,
         context_mask: Optional[Tensor] = None,
@@ -418,8 +450,10 @@ class TransformerBlock(MegatronModule):
         self-attention, optional cross-attention, and feed-forward operations.
 
         Args:
-            hidden_states (Tensor): Input tensor of shape [s, b, h] where s is the
-                sequence length, b is the batch size, and h is the hidden size.
+            hidden_states (Union[Tensor, WrappedTensor]): Input tensor of shape [s, b, h]
+                where s is the sequence length, b is the batch size, and h is the hidden size.
+                Can be passed as a WrappedTensor during inference to avoid an obsolete
+                reference in the calling function.
             attention_mask (Tensor): Boolean tensor of shape [1, 1, s, s] for masking
                 self-attention.
             context (Tensor, optional): Context tensor for cross-attention.
@@ -439,6 +473,10 @@ class TransformerBlock(MegatronModule):
         """
 
         inference_context = deprecate_inference_params(inference_context, inference_params)
+
+        # Delete the obsolete reference to the initial input tensor if necessary
+        if isinstance(hidden_states, WrappedTensor):
+            hidden_states = hidden_states.unwrap()
 
         if not self.pre_process:
             # See set_input_tensor()
@@ -470,33 +508,16 @@ class TransformerBlock(MegatronModule):
         else:
             rng_context = nullcontext()
 
-        if self.config.fp8:
-            import transformer_engine  # To keep out TE dependency when not training in fp8
+        # If fp8_recipe is delayed, wrap the entire pass with get_fp8_context(),
+        # otherwise do nothing extra at the outer level
+        # if we are using other fp8 recipes, then the context manager enter&exit are free
+        # we can wrap fp8_context within the for loop over layers, so that we can fine-grained
+        # control which layer will be fp8 or bf16
+        use_outer_fp8_context = self.config.fp8 and self.config.fp8_recipe == Fp8Recipe.delayed
+        use_inner_fp8_context = self.config.fp8 and self.config.fp8_recipe != Fp8Recipe.delayed
+        outer_fp8_context = get_fp8_context(self.config) if use_outer_fp8_context else nullcontext()
 
-            if self.config.fp8 == "e4m3":
-                fp8_format = transformer_engine.common.recipe.Format.E4M3
-            elif self.config.fp8 == "hybrid":
-                fp8_format = transformer_engine.common.recipe.Format.HYBRID
-            else:
-                raise ValueError("E4M3 and HYBRID are the only supported FP8 formats.")
-
-            fp8_recipe = TEDelayedScaling(
-                config=self.config,
-                fp8_format=fp8_format,
-                override_linear_precision=(False, False, not self.config.fp8_wgrad),
-            )
-            fp8_group = None
-            if parallel_state.model_parallel_is_initialized():
-                fp8_group = parallel_state.get_amax_reduction_group(
-                    with_context_parallel=True, tp_only_amax_red=self.tp_only_amax_red
-                )
-            fp8_context = transformer_engine.pytorch.fp8_autocast(
-                enabled=True, fp8_recipe=fp8_recipe, fp8_group=fp8_group
-            )
-        else:
-            fp8_context = nullcontext()
-
-        with rng_context, fp8_context:
+        with rng_context, outer_fp8_context:
             # Forward pass.
             if self.config.recompute_granularity == 'full' and self.training:
                 hidden_states = self._checkpointed_forward(
@@ -510,7 +531,12 @@ class TransformerBlock(MegatronModule):
                 )
             else:
                 for l_no, layer in enumerate(self.layers):
-                    with self.offload_context:
+                    inner_fp8_context = (
+                        get_fp8_context(self.config, layer.layer_number - 1)
+                        if use_inner_fp8_context
+                        else nullcontext()
+                    )
+                    with self.offload_context, inner_fp8_context:
                         hidden_states, context = layer(
                             hidden_states=hidden_states,
                             attention_mask=attention_mask,
@@ -570,12 +596,15 @@ class TransformerBlock(MegatronModule):
         elif isinstance(self.config.moe_layer_freq, list):
             non_homogeneous_layers = True
 
+        if self.config.heterogeneous_block_specs:
+            non_homogeneous_layers = True
+
         sharded_state_dict = {}
 
         layer_prefix = f'{prefix}layers.'
         num_layers = self.config.num_layers
         for layer in self.layers:
-            offset = TransformerLayer._get_layer_offset(self.config)
+            offset = get_transformer_layer_offset(self.config)
 
             global_layer_offset = layer.layer_number - 1  # self.layer_number starts at 1
             state_dict_prefix = f'{layer_prefix}{global_layer_offset - offset}.'  # module list index in TransformerBlock # pylint: disable=line-too-long

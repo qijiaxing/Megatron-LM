@@ -1,11 +1,9 @@
 .functional_tests_rules:
   stage: functional_tests
   rules:
-    - if: $FUNCTIONAL_TEST == "yes" && ($CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true")
-      allow_failure: true
-    - if: $FUNCTIONAL_TEST == "yes" || ($CI_MERGE_REQUEST_EVENT_TYPE == 'merge_train' && $CI_MERGE_REQUEST_LABELS !~ /docs-only/)
+    - if: $FUNCTIONAL_TEST == "yes"
+      when: on_success
     - when: never
-
 default:
   id_tokens:
     VAULT_JWT_TOKEN:
@@ -19,6 +17,7 @@ include:
 functional:configure:
   needs:
     - test:build_image
+    - test:build_nemo_image
     - job: test:unit_tests_pyt(DEV)_mcore(latest)
       optional: true
     - job: test:unit_tests_pyt(LTS)_mcore(latest)
@@ -95,7 +94,9 @@ functional:configure:
       - tests/test_utils/local_recipes
 
 .functional_run:
-  needs: [functional:configure]
+  needs:
+    - functional:configure
+    - test:build_image
   extends: [.functional_tests_rules]
   trigger:
     include:
@@ -108,6 +109,10 @@ functional:configure:
     CI_MCORE_LTS_IMAGE: $CI_MCORE_LTS_IMAGE
     GITLAB_ENDPOINT: $GITLAB_ENDPOINT
     PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+    DASHBOARD_ENDPOINT: $DASHBOARD_ENDPOINT
+    MCORE_MR_COMMIT: $MCORE_MR_COMMIT
+    MCORE_BACKWARDS_COMMIT: $MCORE_BACKWARDS_COMMIT
+
   inherit:
     variables: true
 
@@ -159,8 +164,6 @@ functional:x_notify:
     RO_API_TOKEN: ${PROJECT_ACCESS_TOKEN_MCORE}
     CONTEXT: $FUNCTIONAL_TEST_SCOPE
   script:
-    - apk add bash
-    - apk add --update coreutils
     - env
     - export WEBHOOK_URL=${MCORE_NOTIFICATION_HOOK}
     - export RO_API_TOKEN=${PROJECT_ACCESS_TOKEN_MCORE}

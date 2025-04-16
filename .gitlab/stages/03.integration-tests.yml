@@ -1,9 +1,8 @@
 .integration_tests_rules:
   stage: integration_tests
   rules:
-    - if: $INTEGRATION_TEST == "yes" && ($CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true")
-      allow_failure: true
-    - if: $INTEGRATION_TEST == "yes" || ($CI_MERGE_REQUEST_EVENT_TYPE == 'merge_train' && $CI_MERGE_REQUEST_LABELS !~ /docs-only/)
+    - if: $INTEGRATION_TEST == "yes"
+      when: on_success
     - when: never
 
 default:
@@ -76,7 +75,9 @@ integration:configure:
       - tests/test_utils/local_recipes
 
 .integration_run:
-  needs: [integration:configure]
+  needs:
+    - integration:configure
+    - test:build_image
   extends: [.integration_tests_rules]
   trigger:
     include:
@@ -89,6 +90,10 @@ integration:configure:
     CI_MCORE_LTS_IMAGE: $CI_MCORE_LTS_IMAGE
     GITLAB_ENDPOINT: $GITLAB_ENDPOINT
     PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+    DASHBOARD_ENDPOINT: $DASHBOARD_ENDPOINT
+    MCORE_MR_COMMIT: $MCORE_MR_COMMIT
+    MCORE_BACKWARDS_COMMIT: $MCORE_BACKWARDS_COMMIT
+
   inherit:
     variables: true
 

@@ -17,7 +17,9 @@ from torch import Tensor, nn
 from megatron.core import parallel_state
 from megatron.core.dist_checkpointing.mapping import ShardedStateDict
 from megatron.core.dist_checkpointing.utils import replace_prefix_for_sharding
+from megatron.core.enums import Fp8Recipe
 from megatron.core.extensions.transformer_engine import TENorm
+from megatron.core.fp8_utils import get_fp8_context
 from megatron.core.inference.contexts import BaseInferenceContext
 from megatron.core.ssm.mamba_hybrid_layer_allocation import Symbols as LayerSymbols
 from megatron.core.ssm.mamba_hybrid_layer_allocation import allocate_layers
@@ -28,7 +30,7 @@ from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 from megatron.core.transformer.transformer_layer import TransformerLayer
 from megatron.core.transformer.utils import sharded_state_dict_default
-from megatron.core.utils import deprecate_inference_params, make_viewless_tensor
+from megatron.core.utils import WrappedTensor, deprecate_inference_params, make_viewless_tensor
 
 
 # https://github.com/huggingface/transformers/blob/c28d04e9e252a1a099944e325685f14d242ecdcd/src/transformers/models/gpt2/modeling_gpt2.py#L454
@@ -153,23 +155,27 @@ class MambaStack(MegatronModule):
 
         self.layers = nn.ModuleList()
         for i, layer_type in enumerate(layer_type_list):
-            if layer_type == LayerSymbols.MAMBA:
-                layer = build_module(
-                    submodules.mamba_layer,
-                    config=self.config,
-                    residual_in_fp32=residual_in_fp32,
-                    layer_number=i + 1 + pp_layer_offset,
-                )
-            elif layer_type == LayerSymbols.ATTENTION:
-                # Transformer layers apply their own pp_layer_offset
-                layer = build_module(
-                    submodules.attention_layer, config=self.config, layer_number=i + 1
-                )
-            elif layer_type == LayerSymbols.MLP:
-                # Transformer layers apply their own pp_layer_offset
-                layer = build_module(submodules.mlp_layer, config=self.config, layer_number=i + 1)
-            else:
-                assert False, "unexpected layer_type"
+            fp8_init_context = get_fp8_context(self.config, i + pp_layer_offset, is_init=True)
+            with fp8_init_context:
+                if layer_type == LayerSymbols.MAMBA:
+                    layer = build_module(
+                        submodules.mamba_layer,
+                        config=self.config,
+                        residual_in_fp32=residual_in_fp32,
+                        layer_number=i + 1 + pp_layer_offset,
+                    )
+                elif layer_type == LayerSymbols.ATTENTION:
+                    # Transformer layers apply their own pp_layer_offset
+                    layer = build_module(
+                        submodules.attention_layer, config=self.config, layer_number=i + 1
+                    )
+                elif layer_type == LayerSymbols.MLP:
+                    # Transformer layers apply their own pp_layer_offset
+                    layer = build_module(
+                        submodules.mlp_layer, config=self.config, layer_number=i + 1
+                    )
+                else:
+                    assert False, "unexpected layer_type"
             self.layers.append(layer)
 
         # Required for activation recomputation
@@ -233,44 +239,9 @@ class MambaStack(MegatronModule):
         forward_step_func"""
         self.input_tensor = input_tensor
 
-    def get_fp8_context(self, layer_no=-1):
-        """Instantiate FP8 context manager."""
-
-        # First and last 2 Mamba layers are retained in BF16
-        if not self.config.fp8 or (
-            self.config.first_last_layers_bf16
-            and layer_no in (0, 1, self.config.num_layers - 2, self.config.num_layers - 1)
-        ):
-            fp8_context = nullcontext()
-        else:
-            import transformer_engine  # To keep out TE dependency when not training in fp8
-
-            if self.config.fp8 == "e4m3":
-                fp8_format = transformer_engine.common.recipe.Format.E4M3
-            elif self.config.fp8 == "hybrid":
-                fp8_format = transformer_engine.common.recipe.Format.HYBRID
-            else:
-                raise ValueError("E4M3 and HYBRID are the only supported FP8 formats.")
-
-            fp8_recipe = transformer_engine.common.recipe.DelayedScaling(
-                margin=self.config.fp8_margin,
-                interval=self.config.fp8_interval,
-                fp8_format=fp8_format,
-                amax_compute_algo=self.config.fp8_amax_compute_algo,
-                amax_history_len=self.config.fp8_amax_history_len,
-                override_linear_precision=(False, False, not self.config.fp8_wgrad),
-            )
-            fp8_group = None
-            if parallel_state.model_parallel_is_initialized():
-                fp8_group = parallel_state.get_amax_reduction_group(with_context_parallel=True)
-            fp8_context = transformer_engine.pytorch.fp8_autocast(
-                enabled=True, fp8_recipe=fp8_recipe, fp8_group=fp8_group
-            )
-        return fp8_context
-
     def forward(
         self,
-        hidden_states: Tensor,
+        hidden_states: Union[Tensor, WrappedTensor],
         attention_mask: Tensor,
         inference_context: Optional[BaseInferenceContext] = None,
         rotary_pos_emb: Optional[Tensor] = None,
@@ -284,7 +255,9 @@ class MambaStack(MegatronModule):
             final hidden units
 
         Args:
-            hidden_states (Tensor): the input tensor.
+            hidden_states (Union[Tensor, WrappedTensor]): the input tensor.
+                Can be passed as a WrappedTensor during inference to avoid an obsolete
+                reference in the calling function.
             attention_mask (Tensor): the attention mask.
             inference_context (BaseInferenceContext): the inference parameters.
             rotary_pos_emb (Tensor, optional): the rotary positional embeddings.
@@ -298,6 +271,14 @@ class MambaStack(MegatronModule):
         if not self.pre_process:
             # See set_input_tensor()
             hidden_states = self.input_tensor
+
+        # Delete the obsolete reference to the initial input tensor if necessary
+        if isinstance(hidden_states, WrappedTensor):
+            hidden_states = hidden_states.unwrap()
+
+        # Update the inference parameters with the current batch size in case it is variable
+        if inference_context and not self.training:
+            inference_context.current_batch_size = hidden_states.size(1)
 
         if inference_context:
             assert (
@@ -323,28 +304,43 @@ class MambaStack(MegatronModule):
         else:
             sequence_len_offset = None
 
-        for layer in self.layers:
-            with self.get_fp8_context(layer.layer_number - 1):
-                if isinstance(layer, TransformerLayer):
-                    hidden_states, _ = layer(
-                        hidden_states=hidden_states,
-                        attention_mask=attention_mask,
-                        inference_context=inference_context,
-                        rotary_pos_emb=rotary_pos_emb,
-                        sequence_len_offset=sequence_len_offset,
-                    )
-                else:  # MambaLayer
-                    hidden_states = layer(
-                        hidden_states=hidden_states,
-                        attention_mask=attention_mask,
-                        inference_context=inference_context,
-                    )
+        # If fp8_recipe is delayed, wrap the entire pass with get_fp8_context(),
+        # otherwise do nothing extra at the outer level
+        # if we are using other fp8 recipes, then the context manager enter&exit are free
+        # we can wrap fp8_context within the for loop over layers, so that we can fine-grained
+        # control which layer will be fp8 or bf16
+        use_outer_fp8_context = self.config.fp8 and self.config.fp8_recipe == Fp8Recipe.delayed
+        use_inner_fp8_context = self.config.fp8 and self.config.fp8_recipe != Fp8Recipe.delayed
+        outer_fp8_context = get_fp8_context(self.config) if use_outer_fp8_context else nullcontext()
 
-            # The attention layer (currently a simplified transformer layer)
-            # outputs a tuple of (hidden_states, context). Context is intended
-            # for cross-attention, and is not needed in our model.
-            if isinstance(hidden_states, tuple):
-                hidden_states = hidden_states[0]
+        with outer_fp8_context:
+            for layer in self.layers:
+                inner_fp8_context = (
+                    get_fp8_context(self.config, layer.layer_number - 1)
+                    if use_inner_fp8_context
+                    else nullcontext()
+                )
+                with inner_fp8_context:
+                    if isinstance(layer, TransformerLayer):
+                        hidden_states, _ = layer(
+                            hidden_states=hidden_states,
+                            attention_mask=attention_mask,
+                            inference_context=inference_context,
+                            rotary_pos_emb=rotary_pos_emb,
+                            sequence_len_offset=sequence_len_offset,
+                        )
+                    else:  # MambaLayer
+                        hidden_states = layer(
+                            hidden_states=hidden_states,
+                            attention_mask=attention_mask,
+                            inference_context=inference_context,
+                        )
+
+                # The attention layer (currently a simplified transformer layer)
+                # outputs a tuple of (hidden_states, context). Context is intended
+                # for cross-attention, and is not needed in our model.
+                if isinstance(hidden_states, tuple):
+                    hidden_states = hidden_states[0]
 
         # Final layer norm.
         if self.post_process and self.post_layer_norm:

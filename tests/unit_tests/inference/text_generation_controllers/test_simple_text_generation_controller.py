@@ -4,7 +4,7 @@ import random
 import string
 import time
 from argparse import Namespace
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from typing import Dict, List
 from unittest import mock
 
@@ -12,7 +12,7 @@ import pytest
 import torch
 
 from megatron.core import parallel_state
-from megatron.core.inference.contexts import StaticInferenceContext
+from megatron.core.inference.contexts import StaticInferenceContext, TokenOverflowError
 from megatron.core.inference.inference_request import InferenceRequest, Status
 from megatron.core.inference.model_inference_wrappers.gpt.gpt_inference_wrapper import (
     GPTInferenceWrapper,
@@ -28,8 +28,8 @@ from megatron.core.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 from megatron.core.models.gpt.gpt_model import GPTModel
 from megatron.core.tensor_parallel.random import model_parallel_cuda_manual_seed
 from megatron.core.transformer.enums import AttnBackend
+from megatron.core.transformer.module import Float16Module
 from megatron.core.transformer.transformer_config import TransformerConfig
-from megatron.legacy.model import Float16Module
 from tests.unit_tests.test_utilities import Utils
 
 
@@ -52,6 +52,8 @@ class TestTextGenerationController:
             attention_backend=AttnBackend.local,
             params_dtype=dtype,
         )
+        if dtype == torch.bfloat16:
+            transformer_config.bf16 = True
 
         gpt_model = GPTModel(
             config=transformer_config,
@@ -63,7 +65,7 @@ class TestTextGenerationController:
             post_process=parallel_state.is_pipeline_last_stage(),
         ).cuda()
         if dtype == torch.bfloat16:
-            gpt_model = Float16Module(gpt_model, Namespace(fp16=False, bf16=True))
+            gpt_model = Float16Module(gpt_model.config, gpt_model)
 
         inference_wrapper_config = InferenceWrapperConfig(
             hidden_size=self.hidden_size,
@@ -126,6 +128,30 @@ class TestTextGenerationController:
         assert torch.all(
             sampled_logits.cpu() == torch.ones(self.batch_size) * self.vocab_size - 1
         ), f"The sampled logits should all be {self.vocab_size} but its {sampled_logits}"
+
+        top_n_logprobs_dict = defaultdict(list)
+
+        class MockTokenizer:
+            def detokenize(self, inp):
+                return inp[0]
+
+        self.text_generation_controller.tokenizer = MockTokenizer()
+        last_token_logits_top_n_input = (
+            torch.arange(0, self.vocab_size).repeat(self.batch_size, 1).float().cuda() / 10
+        )
+        sampled_logits = self.text_generation_controller.sample_from_logits(
+            last_token_logits_top_n_input,
+            SamplingParams(top_k=1, top_n_logprobs=3),
+            self.vocab_size,
+            generation_started=torch.tensor([True] * self.batch_size),
+            top_n_logprobs_dict=top_n_logprobs_dict,
+        )
+
+        assert list(top_n_logprobs_dict[0][0].values()) == [
+            -2.3521223068237305,
+            -2.452122688293457,
+            -2.5521230697631836,
+        ]
 
         sampled_logits = self.text_generation_controller.sample_from_logits(
             last_token_logits, SamplingParams(top_k=2), self.vocab_size
@@ -210,8 +236,12 @@ class TestTextGenerationController:
             assert (
                 all_prompt_tokens[request_id] == request.prompt_tokens
             ), "Prompt tokens should not have changed during generation"
-            assert len(request.segments) == len(request.prompt_log_probs) + len(
-                request.generated_log_probs
+            # Log probabilities are calculated based on the likelihood of a token given the
+            # preceding context. The first token lacks this dependency and is excluded from
+            # the logprobs output, which is why the +1 is necessary
+            assert (
+                len(request.segments)
+                == len(request.prompt_log_probs) + len(request.generated_log_probs) + 1
             ), "Segments should be returned for both prompt and generated tokens"
             assert len(request.prompt) + len(request.generated_text) == len(
                 request.text
@@ -294,7 +324,7 @@ class TestTextGenerationController:
             )
             active_requests[i] = inference_request
 
-        with pytest.raises(AssertionError):
+        with pytest.raises(TokenOverflowError):
             requests = self.text_generation_controller.generate_all_output_tokens_static_batch(
                 active_requests
             )

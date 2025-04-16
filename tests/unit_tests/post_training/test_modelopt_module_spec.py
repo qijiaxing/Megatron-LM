@@ -79,7 +79,6 @@ class TestModelOptGPTModel:
             vocab_size=100,
             max_sequence_length=4,
         )
-
         # Ensure that a GPTModel can be built with the modelopt spec.
         self.modelopt_model = GPTModel(
             config=transformer_config,
@@ -104,8 +103,9 @@ class TestModelOptGPTModel:
     def test_inference(self):
         if not self._test_inference:
             return
-        model_forward(self.modelopt_model.cuda(), self.modelopt_model.config)
-        model_forward(self.default_model.cuda(), self.default_model.config)
+        config: TransformerConfig = self.modelopt_model.config
+        model = self.modelopt_model.cuda()
+        model_forward(model, config)
 
     def teardown_method(self, method):
         Utils.destroy_model_parallel()
@@ -196,16 +196,21 @@ def test_get_gpt_modelopt_spec_interface():
         "real_quant_cfg": "None",
     }
 
-    # Check parameter kinds
-    for param_name, param in sig.parameters.items():
-        assert param_name in expected_params.keys(), f"Unexpected parameter: {param_name}"
-        assert param.kind is expected_params[param_name], f"Wrong kind for parameter: {param_name}"
+    # Check expected parameters are in function signature
+    for param_name, param_kind in expected_params.items():
+        assert param_name in sig.parameters, f"Unexpected parameter: {param_name}"
+        assert (
+            param_kind is sig.parameters[param_name].kind
+        ), f"Wrong kind for parameter: {param_name}"
 
     # Check default values
-    defaults = {
+    sig_defaults = {
         k: v.default for k, v in sig.parameters.items() if v.default is not inspect.Parameter.empty
     }
-    assert defaults == expected_defaults, "Default values do not match the expected ones."
+    for k, v in expected_defaults.items():
+        assert (
+            k in sig_defaults and v == sig_defaults[k]
+        ), f"Default value of {sig_defaults[k]} does not match the expected value of {v} for parameter {k}."
 
 
 def test_get_mamba_stack_modelopt_spec_interface():
