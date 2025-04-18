@@ -24,6 +24,9 @@ from megatron.core.transformer.moe.moe_utils import (
 from megatron.core.transformer.moe.shared_experts import SharedExpertMLP
 from megatron.core.transformer.transformer_config import TransformerConfig
 
+import logging
+logger = logging.getLogger(__name__)
+
 """ We use the following notation throughout this file:
      H: hidden size
      B: micro batch size
@@ -824,6 +827,9 @@ class _DeepepManager(_DispatchManager):
             if self.token_probs.dtype in [torch.bfloat16, torch.float16]:
                 print("DeepEP only supports float32 probs, please set --moe-router-dtype=fp32")
             self.token_probs = self.token_probs.float()  # downcast or upcast
+
+        # JQ:
+        #   input is bf16, output is fp8 (qx + sx)
         hidden_states, dispatched_indices, dispatched_probs, num_tokens_per_expert, handle = (
             fused_dispatch(
                 hidden_states, self.token_indices, self.token_probs, self.num_experts, self.group
@@ -891,8 +897,15 @@ class _DeepepManager(_DispatchManager):
             self.dispatched_routing_map, self.dispatched_probs = self._indices_to_multihot(
                 self.dispatched_indices, self.dispatched_probs
             )
-        self.hidden_shape_before_permute = hidden_states.shape
+        logger.debug(
+          f"[FP8 All2All] After indices to multihot, routing map shape: {list(self.dispatched_routing_map.shape)}")
+
+        # JQ:
+        assert len(hidden_states)==2, f"[FP8 ALL2ALL] assume hidden_states is a list: qx and sx"
+        self.hidden_shape_before_permute = hidden_states[0].shape # [m, k]
+
         assert self.dispatched_probs.dtype == torch.float32, "DeepEP only supports float32 probs"
+        # JQ: permute fp8 tensor, output hidden_states is (qx, sx)
         hidden_states, permuted_probs, self.reversed_mapping_for_combine = permute(
             hidden_states,
             self.dispatched_routing_map,
@@ -999,7 +1012,13 @@ class MoEFlexTokenDispatcher(MoETokenDispatcher):
         routing_map, probs = self._initialize_metadata(routing_map, probs)
 
         self._comm_manager.setup_metadata(routing_map, probs)
+
+        # JQ:
+        #   input is bf16, output is fp8 (qx + sx)
         hidden_states = self._comm_manager.dispatch(hidden_states)
+
+        # JQ: process fp8
+        #   qx, sx = hidden_states
         global_input_tokens, permuted_probs = (
             self._comm_manager.get_permuted_hidden_states_by_experts(hidden_states)
         )

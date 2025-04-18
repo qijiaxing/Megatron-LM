@@ -14,6 +14,9 @@ import torch
 
 _buffer = None
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 def get_hidden_bytes(x: torch.Tensor) -> int:
     """Calculate the number of hidden bytes for a tensor.
@@ -85,6 +88,17 @@ class FusedDispatch(torch.autograd.Function):
             allocate_on_comm_stream=False,
         )
 
+        # JQ: quantize x to fp8 (done)
+        from hybrid import config
+        from hybrid import quantization
+        qlinear_params = config.get_qlinear_params_from_env_qat_params()
+        quantize_op: quantization.QuantizeOpBase = qlinear_params.quantize_op
+        # x: [m, k], scale shape: [m, k/128]
+        qresult_x = quantize_op.quantize(
+            x, qlinear_params.x_params, return_transpose=False,
+        )
+        x = (qresult_x.data, qresult_x.scale)
+
         # Do MoE dispatch
         # NOTES: the CPU will wait for GPU's signal to arrive,
         # so this is not compatible with CUDA graph
@@ -108,6 +122,19 @@ class FusedDispatch(torch.autograd.Function):
             allocate_on_comm_stream=False,
         )
 
+        # JQ: check recv_x type (done)
+        #   recv_x: [tokens, H]
+        #   token_indices: [tokens, topk]
+        #     token_probs: [tokens, topk]
+        #   num_recv_tokens_per_expert_list: [local_experts]
+        qx, sx = recv_x
+        logger.debug(
+            f"[FP8 All2All] After DeepEP dispatch. Recv qx shape: {list(qx.shape)}, sx shape: {list(sx.shape)}"
+            f", token indices: {list(recv_token_indices.shape)}"
+            f", token probs: {list(recv_token_probs.shape)}"
+            f", num_recv_tokens_per_expert_list: {num_recv_tokens_per_expert_list}"
+        )
+
         ctx.group = group
         ctx.handle = handle
         ctx.event = event
@@ -122,6 +149,8 @@ class FusedDispatch(torch.autograd.Function):
         """Backward pass of fused dispatch."""
         buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
         handle = ctx.handle
+
+        # JQ: (future) quantize to fp8 for combine
 
         grad_x, grad_token_probs, event = buffer.combine(
             grad_output.contiguous(),

@@ -736,9 +736,18 @@ class TEGroupedMLP(MegatronModule):
         tokens_per_expert = tokens_per_expert.tolist()
         if self.config.fp8:
             actual_tokens_per_expert = tokens_per_expert
-            permuted_local_hidden_states, tokens_per_expert = self.fp8_padding(
-                permuted_local_hidden_states, tokens_per_expert
+
+            # JQ: pad both qx and sx for fp8
+            # JQ: (future) maybe fuse kernel to pad multiple tensors
+            qx, sx = permuted_local_hidden_states
+            qx, tokens_per_expert = self.fp8_padding(
+                qx, actual_tokens_per_expert
             )
+            sx, _ = self.fp8_padding(
+                sx, actual_tokens_per_expert
+            )
+            permuted_local_hidden_states = (qx, sx)
+
             permuted_probs, _ = self.fp8_padding(
                 permuted_probs.unsqueeze(-1), actual_tokens_per_expert
             )

@@ -22,6 +22,8 @@ try:
 except ImportError:
     HAVE_TE = False
 
+import logging
+logger = logging.getLogger(__name__)
 
 # MOE logging
 _MOE_LAYER_WISE_LOGGING_TRACKER = {}
@@ -268,11 +270,25 @@ def permute(
         return permuted_input, None, sorted_indices
 
     if fused and probs is not None:
-        if not HAVE_TE or fused_permute_with_probs is None:
-            raise ValueError(
-                "fused_permute_with_probs is not available. Please install TE >= 2.1.0."
-            )
-        return fused_permute_with_probs(tokens, probs, routing_map, num_out_tokens=num_out_tokens)
+        # JQ: import custom permute_with_probs
+        # if not HAVE_TE or fused_permute_with_probs is None:
+        #     raise ValueError(
+        #         "fused_permute_with_probs is not available. Please install TE >= 2.1.0."
+        #     )
+        # return fused_permute_with_probs(tokens, probs, routing_map, num_out_tokens=num_out_tokens)
+        # return _moe_permute_mask_map.apply(
+        #     tokens, probs=probs, routing_map=routing_map, num_out_tokens=num_out_tokens)
+        from megatron.core.transformer.moe.permute import (_moe_permute_mask_map)
+        output, row_id_map, permuted_probs = _moe_permute_mask_map.apply(
+            tokens, routing_map, num_out_tokens, probs
+        )
+
+        logger.debug(f"[FP8 All2All] permute mask map, qx: {list(output[0].shape)}"
+            f", scale: {list(output[1].shape)}, probs: {list(permuted_probs.shape)}"
+            f", row id map: {list(row_id_map.shape)}")
+
+        # JQ: output is (qx, sx) after permuted
+        return output, permuted_probs, row_id_map
 
     num_tokens, hidden = tokens.shape
     num_experts = routing_map.shape[1]
