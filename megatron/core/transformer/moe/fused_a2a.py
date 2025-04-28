@@ -18,6 +18,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def quantize(x):
+  from hybrid import config
+  from hybrid import quantization
+  qlinear_params = config.get_qlinear_params_from_env_qat_params()
+  quantize_op: quantization.QuantizeOpBase = qlinear_params.quantize_op
+  # x: [m, k], scale shape: [m, k/128]
+  qresult_x = quantize_op.quantize(
+    x, qlinear_params.x_params, return_transpose=False,
+  )
+
+  return (qresult_x.data, qresult_x.scale)
+
+
 def get_hidden_bytes(x: torch.Tensor) -> int:
     """Calculate the number of hidden bytes for a tensor.
 
@@ -89,15 +102,8 @@ class FusedDispatch(torch.autograd.Function):
         )
 
         # JQ: quantize x to fp8 (done)
-        from hybrid import config
-        from hybrid import quantization
-        qlinear_params = config.get_qlinear_params_from_env_qat_params()
-        quantize_op: quantization.QuantizeOpBase = qlinear_params.quantize_op
-        # x: [m, k], scale shape: [m, k/128]
-        qresult_x = quantize_op.quantize(
-            x, qlinear_params.x_params, return_transpose=False,
-        )
-        x = (qresult_x.data, qresult_x.scale)
+        # TODO: still apply get_hidden_bytes for fp8 all2all?
+        x = quantize(x)
 
         # Do MoE dispatch
         # NOTES: the CPU will wait for GPU's signal to arrive,
@@ -120,6 +126,7 @@ class FusedDispatch(torch.autograd.Function):
             previous_event=None,
             async_finish=False,
             allocate_on_comm_stream=False,
+            expert_alignment=128,  # JQ: align the number of tokens received by each local expert to this variable.
         )
 
         # JQ: check recv_x type (done)
@@ -129,7 +136,7 @@ class FusedDispatch(torch.autograd.Function):
         #   num_recv_tokens_per_expert_list: [local_experts]
         qx, sx = recv_x
         logger.debug(
-            f"[FP8 All2All] After DeepEP dispatch. Recv qx shape: {list(qx.shape)}, sx shape: {list(sx.shape)}"
+            f"[FP8 All2All] After DeepEP dispatch. Recv qx: {list(qx.shape)}, sx: {list(sx.shape)}"
             f", token indices: {list(recv_token_indices.shape)}"
             f", token probs: {list(recv_token_probs.shape)}"
             f", num_recv_tokens_per_expert_list: {num_recv_tokens_per_expert_list}"
@@ -182,8 +189,13 @@ class FusedCombine(torch.autograd.Function):
     def backward(ctx, grad_output, previous_event=None):
         """Backward pass of fused combine."""
         buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
+
+        # JQ: quantize to fp8 (qdy, sdy)
+        # TODO: still apply get_hidden_bytes for fp8 all2all?
+        grad_output = quantize(grad_output)
+
         grad_x, _, _, _, _, event = buffer.dispatch(
-            grad_output.contiguous(),
+            grad_output,
             handle=ctx.handle,
             previous_event=previous_event,
             async_finish=False,
