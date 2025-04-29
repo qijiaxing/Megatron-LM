@@ -17,6 +17,11 @@ _buffer = None
 import logging
 logger = logging.getLogger(__name__)
 
+from megatron.core.transformer.moe.permute import (
+    to_fp8_tensor,
+    get_data_from_fp8,
+    get_scale_from_fp8,
+)
 
 def quantize(x):
   from hybrid import config
@@ -134,9 +139,10 @@ class FusedDispatch(torch.autograd.Function):
         #   token_indices: [tokens, topk]
         #     token_probs: [tokens, topk]
         #   num_recv_tokens_per_expert_list: [local_experts]
-        qx, sx = recv_x
+        recv_x = to_fp8_tensor(recv_x[0], recv_x[1])
+
         logger.debug(
-            f"[FP8 All2All] After DeepEP dispatch. Recv qx: {list(qx.shape)}, sx: {list(sx.shape)}"
+            f"[FP8 All2All] After DeepEP dispatch. Recv qx: {list(get_data_from_fp8(recv_x).shape)}, sx: {list(get_scale_from_fp8(recv_x).shape)}"
             f", token indices: {list(recv_token_indices.shape)}"
             f", token probs: {list(recv_token_probs.shape)}"
             f", num_recv_tokens_per_expert_list: {num_recv_tokens_per_expert_list}"
@@ -201,6 +207,11 @@ class FusedCombine(torch.autograd.Function):
             async_finish=False,
             allocate_on_comm_stream=False,
         )
+
+        # TODO: add pack_to_blockwise_fp8
+        assert (len(grad_x)==2), "[FP8 All2All] in FusedCombine BWD, grad_x should have 2 tensors!"
+        grad_x = to_fp8_tensor(grad_x[0], grad_x[1])
+
         return grad_x, None, None, None
 
 

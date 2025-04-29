@@ -22,6 +22,11 @@ try:
 except ImportError:
     HAVE_TE = False
 
+from megatron.core.transformer.moe.permute import (
+    _moe_permute_mask_map,
+    _moe_unpermute_mask_map,
+)
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -279,7 +284,6 @@ def permute(
         #     tokens, probs=probs, routing_map=routing_map, num_out_tokens=num_out_tokens)
 
         # JQ: modified permute_with_probs to make it support fp8 (qx and sx)
-        from megatron.core.transformer.moe.permute import (_moe_permute_mask_map)
         output, row_id_map, permuted_probs = _moe_permute_mask_map.apply(
             tokens, routing_map, num_out_tokens, probs
         )
@@ -364,9 +368,12 @@ def unpermute(
     if fused:
         if not HAVE_TE or fused_unpermute is None:
             raise ValueError("fused_unpermute is not available. Please install TE >= 2.1.0.")
-        return fused_unpermute(
-            permuted_tokens, sorted_indices, merging_probs=probs, restore_shape=restore_shape
-        )
+        # return fused_unpermute(
+        #     permuted_tokens, sorted_indices, merging_probs=probs, restore_shape=restore_shape
+        # )
+        # JQ: Apply Unpermute OP
+        return _moe_unpermute_mask_map.apply(
+            permuted_tokens, sorted_indices, probs, restore_shape)
 
     _, hidden = restore_shape
     input_dtype = permuted_tokens.dtype

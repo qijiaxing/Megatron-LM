@@ -737,27 +737,22 @@ class TEGroupedMLP(MegatronModule):
             output (torch.Tensor): The output of the local experts.
         """
         tokens_per_expert = tokens_per_expert.tolist()
-        if self.config.fp8:
+        do_padding = not all([tokens % 128 == 0 for tokens in tokens_per_expert])
+        # if self.config.fp8:
+        if self.config.fp8 and do_padding:
             actual_tokens_per_expert = tokens_per_expert
 
-            # JQ: pad both qx and sx for fp8
-            # JQ: (future) maybe fuse kernel to pad multiple tensors
-            qx, sx = permuted_local_hidden_states
-            qx, tokens_per_expert = self.fp8_padding(
-                qx, actual_tokens_per_expert
+            # JQ: to fp8 tensor inside padding, if needed
+            permuted_local_hidden_states, tokens_per_expert = self.fp8_padding(
+                permuted_local_hidden_states, actual_tokens_per_expert
             )
-            sx, _ = self.fp8_padding(
-                sx, actual_tokens_per_expert
-            )
-            permuted_local_hidden_states = (qx, sx)
-            logger.debug(f"[FP8 All2All] before padding, tokens per expert: {actual_tokens_per_expert}"
-                f", after padding, tokens per expert: {tokens_per_expert}")
 
             permuted_probs, _ = self.fp8_padding(
                 permuted_probs.unsqueeze(-1), actual_tokens_per_expert
             )
         else:
             permuted_probs = permuted_probs.unsqueeze(-1)
+        logger.debug(f"[FP8 All2All] skip padding: {skip_padding}, prob shape: {list(permuted_probs.shape)}")
 
         intermediate_parallel, bias_parallel = self.linear_fc1(
             permuted_local_hidden_states, tokens_per_expert
