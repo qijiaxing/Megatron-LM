@@ -270,7 +270,6 @@ def permute(
         return permuted_input, None, sorted_indices
 
     if fused and probs is not None:
-        # JQ: import custom permute_with_probs
         # if not HAVE_TE or fused_permute_with_probs is None:
         #     raise ValueError(
         #         "fused_permute_with_probs is not available. Please install TE >= 2.1.0."
@@ -278,6 +277,8 @@ def permute(
         # return fused_permute_with_probs(tokens, probs, routing_map, num_out_tokens=num_out_tokens)
         # return _moe_permute_mask_map.apply(
         #     tokens, probs=probs, routing_map=routing_map, num_out_tokens=num_out_tokens)
+
+        # JQ: modified permute_with_probs to make it support fp8 (qx and sx)
         from megatron.core.transformer.moe.permute import (_moe_permute_mask_map)
         output, row_id_map, permuted_probs = _moe_permute_mask_map.apply(
             tokens, routing_map, num_out_tokens, probs

@@ -898,14 +898,13 @@ class _DeepepManager(_DispatchManager):
                 self.dispatched_indices, self.dispatched_probs
             )
         logger.debug(
-          f"[FP8 All2All] After indices to multihot, routing map shape: {list(self.dispatched_routing_map.shape)}")
-
-        # JQ:
-        assert len(hidden_states)==2, f"[FP8 ALL2ALL] assume hidden_states is a list: qx and sx"
-        self.hidden_shape_before_permute = hidden_states[0].shape # [m, k]
+          f"[FP8 All2All] After indices to multihot, routing map: {list(self.dispatched_routing_map.shape)}"
+          f", probs: {list(self.dispatched_probs.shape)}")
 
         assert self.dispatched_probs.dtype == torch.float32, "DeepEP only supports float32 probs"
-        # JQ: permute fp8 tensor, output hidden_states is (qx, sx)
+
+        # JQ: permute fp8 tensor, save shape for later unpermute
+        self.hidden_shape_before_permute = hidden_states.shape
         hidden_states, permuted_probs, self.reversed_mapping_for_combine = permute(
             hidden_states,
             self.dispatched_routing_map,
@@ -913,8 +912,10 @@ class _DeepepManager(_DispatchManager):
             num_out_tokens=sum(self.tokens_per_expert),
             fused=self.permute_fusion,
         )
+
         if self.router_dtype == "fp64":
             permuted_probs = permuted_probs.to(torch.float64)
+
         return hidden_states, permuted_probs
 
     def get_restored_hidden_states_by_experts(self, hidden_states: torch.Tensor) -> torch.Tensor:

@@ -48,6 +48,9 @@ except ImportError:
 
     HAVE_TE = False
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 # TODO(Hepteract): delete the usage of the global parallel_state.
 # Currently we still have to use the global parallel_state in expert_dist_ckpt_decorator(),
@@ -747,6 +750,8 @@ class TEGroupedMLP(MegatronModule):
                 sx, actual_tokens_per_expert
             )
             permuted_local_hidden_states = (qx, sx)
+            logger.debug(f"[FP8 All2All] before padding, tokens per expert: {actual_tokens_per_expert}"
+                f", after padding, tokens per expert: {tokens_per_expert}")
 
             permuted_probs, _ = self.fp8_padding(
                 permuted_probs.unsqueeze(-1), actual_tokens_per_expert
