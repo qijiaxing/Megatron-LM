@@ -11,62 +11,13 @@ from megatron.core.transformer.moe.triton_permutation import (
 # import logging
 # logger = logging.getLogger(__name__)
 
-# JQ: import TE fp8 tensor
-from transformer_engine_torch import DType as TE_DType
-from transformer_engine.pytorch.tensor.float8_tensor import (
-    # Float8CurrentScalingQuantizer,
-    Float8Tensor,
+# JQ: import float8 tensor
+from hybrid import (
+    to_float8_tensor,
+    is_float8_tensor,
+    get_data_from_float8,
+    get_scale_from_float8,
 )
-
-# QUANTIZER = Float8CurrentScalingQuantizer(
-#     TE_DType.kFloat8E4M3,
-#     torch.device("cuda"),
-#     rowwise=True,
-#     columnwise=False,
-#     amax_epsilon=0.0,
-#     force_pow_2_scales=True,
-# )
-
-def to_fp8_tensor(qx, sx, dtype=torch.bfloat16, requires_grad=True):
-  return Float8Tensor(
-      shape=qx.shape,
-      dtype=dtype,
-      data=qx,
-      fp8_scale_inv=sx,
-      fp8_dtype=TE_DType.kFloat8E4M3,
-      requires_grad=requires_grad,
-      data_transpose=None,
-      quantizer=None,
-      # quantizer=QUANTIZER,
-  )
-
-def get_data_from_fp8(inp):
-  return inp._data
-
-def get_scale_from_fp8(inp):
-  return inp._scale_inv.contiguous()
-
-
-# from transformer_engine.pytorch.tensor.float8_blockwise_tensor import (
-#     Float8BlockQuantizer,
-#     Float8BlockwiseQTensor,
-# )
-
-
-# def to_fp8_tensor(qx, sx, dtype=torch.bfloat16, requires_grad=True):
-#   return Float8BlockwiseQTensor(
-#       shape=qx.shape,
-#       dtype=dtype,
-#       rowwise_data=qx,
-#       rowwise_scale_inv=sx,
-#       columnwise_data=None,
-#       columnwise_scale_inv=None,
-#       fp8_dtype=TE_DType.kFloat8E4M3,
-#       quantizer=QUANTIZER,
-#       is_2D_scaled=False,   # 1x128
-#       requires_grad=requires_grad,
-#   )
-
 
 class _moe_permute_mask_map(torch.autograd.Function):
     """functional Permute with mask router map"""
@@ -79,12 +30,11 @@ class _moe_permute_mask_map(torch.autograd.Function):
         num_out_tokens: int,
         probs: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Check TE for how to handle empty inp
 
         # JQ: handle fp8 tensor
-        assert isinstance(inp, Float8Tensor), f"[FP8 ALL2ALL] permute inp should be TE FP8 tensor type"
-        qx = get_data_from_fp8(inp)
-        sx = get_scale_from_fp8(inp)
+        assert is_float8_tensor(inp), f"[FP8 ALL2ALL] permute inp should be float8 tensor type!"
+        qx = get_data_from_float8(inp)
+        sx = get_scale_from_float8(inp)
         scale_hidden_dim = sx.shape[1]
 
         num_tokens, hidden_size = inp.shape
@@ -116,7 +66,7 @@ class _moe_permute_mask_map(torch.autograd.Function):
         ctx.hidden_size = hidden_size
 
         # JQ: return fp8 tensor
-        output = to_fp8_tensor(output, permuted_scale)
+        output = to_float8_tensor(output, permuted_scale)
 
         return output, row_id_map, permuted_probs
 
