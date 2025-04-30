@@ -131,9 +131,6 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
         assert inp.is_cuda, "TransformerEngine needs CUDA."
         assert row_id_map.is_cuda, "TransformerEngine needs CUDA."
 
-        assert not isinstance(
-            inp, QuantizedTensor
-        ), "The forward of moe_unpermute does not support FP8."
         unpermuted_output, _ = triton_permutation.unpermute_with_mask_map(
             inp,
             row_id_map,
@@ -158,114 +155,33 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
     @staticmethod
     def backward(ctx, unpermuted_act_grad):
         # pylint: disable=missing-function-docstring
-        if not unpermuted_act_grad.numel():
+        assert is_float8_tensor(unpermuted_act_grad), "[FP8 All2All] Assume unpermute BWD inp is float8 tensor!"
+        assert not ctx.with_probs, "Unpermute op NOT support prob!"
+        qx = get_data_from_float8(unpermuted_act_grad)
+        sx = get_scale_from_float8(unpermuted_act_grad)
+
+        if not qx.numel():
             return unpermuted_act_grad, None, ctx.merging_probs, None
 
         act_grad = None
         probs_grad = None
         if ctx.needs_input_grad[0]:
-            if ctx.with_probs:
-                fwd_input, row_id_map, merging_probs = ctx.saved_tensors
-            else:
-                (row_id_map,) = ctx.saved_tensors
+            (row_id_map,) = ctx.saved_tensors
+            scale_hidden_dim = sx.size(1)
 
-            fp8 = isinstance(unpermuted_act_grad, QuantizedTensor)
-            per_tensor_recipe = isinstance(unpermuted_act_grad, Float8Tensor)
-            blockwise_recipe = isinstance(unpermuted_act_grad, Float8BlockwiseQTensor)
-            mxfp8_recipe = isinstance(unpermuted_act_grad, MXFP8Tensor)
+            act_grad, permuted_scale, _ = triton_permutation.permute_with_mask_map(
+                qx,
+                row_id_map,
+                None,
+                sx,
+                ctx.num_tokens,
+                ctx.num_experts,
+                ctx.num_permuted_tokens,
+                ctx.hidden_size,
+                scale_hidden_dim,
+            )
 
-            if fp8:
-                fp8_dtype = unpermuted_act_grad._fp8_dtype
-                fake_dtype = unpermuted_act_grad.dtype
-                # per-tensor scaling
-                if per_tensor_recipe:
-                    # Kernel does not need scale in per-tensor scaling
-                    fp8_scale = None
-                    scale_hidden_dim = None
-                    fp8_scale_inv = unpermuted_act_grad._scale_inv
-                    unpermuted_act_grad = unpermuted_act_grad._data
-                # blockwise scaling
-                elif blockwise_recipe:
-                    fp8_scale = unpermuted_act_grad._rowwise_scale_inv.T.contiguous()
-                    unpermuted_act_grad = unpermuted_act_grad._rowwise_data
-                    scale_hidden_dim = fp8_scale.shape[1]
-                    assert ctx.num_tokens == fp8_scale.shape[0], "scale and input shape mismatch"
-                # mxfp8 scaling
-                elif mxfp8_recipe:
-                    fp8_scale = unpermuted_act_grad._rowwise_scale_inv.contiguous()
-                    unpermuted_act_grad = unpermuted_act_grad._rowwise_data
-                    scale_hidden_dim = fp8_scale.shape[1]
-                    assert ctx.num_tokens == fp8_scale.shape[0], "scale and input shape mismatch"
-                else:
-                    raise ValueError("Unsupported FP8 recipe")
-            else:
-                scale_hidden_dim = None
-                fp8_dtype = None
-                fp8_scale = None
-
-            if ctx.with_probs:
-                assert (
-                    not fp8
-                ), "The backward of moe_unpermute with merging probs does not support FP8."
-                act_grad, probs_grad = (
-                    triton_permutation.unpermute_with_mask_map_bwd_with_merging_probs(
-                        unpermuted_act_grad,
-                        row_id_map,
-                        fwd_input,
-                        merging_probs,
-                        ctx.num_tokens,
-                        ctx.num_experts,
-                        ctx.num_permuted_tokens,
-                        ctx.hidden_size,
-                    )
-                )
-            else:
-                act_grad, permuted_scale, _ = triton_permutation.permute_with_mask_map(
-                    unpermuted_act_grad,
-                    row_id_map,
-                    None,
-                    fp8_scale,
-                    ctx.num_tokens,
-                    ctx.num_experts,
-                    ctx.num_permuted_tokens,
-                    ctx.hidden_size,
-                    scale_hidden_dim,
-                )
-
-            if fp8:
-                if per_tensor_recipe:
-                    act_grad = Float8Tensor(
-                        data=act_grad,
-                        fp8_dtype=fp8_dtype,
-                        fp8_scale_inv=fp8_scale_inv,
-                        shape=act_grad.shape,
-                        dtype=fake_dtype,
-                    )
-                elif blockwise_recipe:
-                    act_grad = Float8BlockwiseQTensor(
-                        shape=act_grad.shape,
-                        dtype=fake_dtype,
-                        rowwise_data=act_grad,
-                        rowwise_scale_inv=permuted_scale.T.contiguous(),
-                        columnwise_data=None,
-                        columnwise_scale_inv=None,
-                        fp8_dtype=fp8_dtype,
-                        quantizer=None,
-                        is_2D_scaled=False,
-                        requires_grad=act_grad.requires_grad,
-                    )
-                elif mxfp8_recipe:
-                    act_grad = MXFP8Tensor(
-                        shape=act_grad.shape,
-                        dtype=fake_dtype,
-                        fp8_dtype=fp8_dtype,
-                        rowwise_data=act_grad,
-                        rowwise_scale_inv=permuted_scale.contiguous(),
-                        columnwise_data=None,
-                        columnwise_scale_inv=None,
-                        quantizer=None,
-                        requires_grad=act_grad.requires_grad,
-                    )
+        act_grad = to_float8_tensor(act_grad, permuted_scale)
 
         if not ctx.needs_input_grad[2]:
             probs_grad = None
