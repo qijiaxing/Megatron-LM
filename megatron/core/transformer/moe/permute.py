@@ -7,6 +7,7 @@ from megatron.core.transformer.moe.triton_permutation import (
     permute_with_mask_map,
     unpermute_with_mask_map,
 )
+from transformer_engine.pytorch.tensor import QuantizedTensor
 
 # import logging
 # logger = logging.getLogger(__name__)
@@ -131,7 +132,7 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
         assert inp.is_cuda, "TransformerEngine needs CUDA."
         assert row_id_map.is_cuda, "TransformerEngine needs CUDA."
 
-        unpermuted_output, _ = triton_permutation.unpermute_with_mask_map(
+        unpermuted_output, _ = unpermute_with_mask_map(
             inp,
             row_id_map,
             merging_probs,
@@ -169,7 +170,7 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
             (row_id_map,) = ctx.saved_tensors
             scale_hidden_dim = sx.size(1)
 
-            act_grad, permuted_scale, _ = triton_permutation.permute_with_mask_map(
+            act_grad, permuted_scale, _ = permute_with_mask_map(
                 qx,
                 row_id_map,
                 None,
