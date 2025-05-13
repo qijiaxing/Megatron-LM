@@ -76,8 +76,23 @@ def _row_id_map_pass_2_kernel(
     )
 
 
+# Example:
+# INPUT routing_map:
+#       [1, 0, 0, 0],
+#       [0, 1, 0, 0],
+#       [0, 0, 1, 0],
+#       [0, 0, 0, 1],
+#       [1, 0, 0, 0],
+#       [0, 1, 0, 0],
+#       [0, 0, 1, 0],
+#       [0, 0, 0, 1],
+# OUTPUT row_id_map (experts, tokens)
+# [[ 0, -1, -1, -1,  1, -1, -1, -1],   expert 0 have token 0 & 4, their index after permute will be 0 & 1
+#  [-1,  2, -1, -1, -1,  3, -1, -1],
+#  [-1, -1,  4, -1, -1, -1,  5, -1],
+#  [-1, -1, -1,  6, -1, -1, -1,  7]]
 def make_row_id_map(
-    routing_map: torch.Tensor,
+    routing_map: torch.Tensor,  # [num_tokens, num_experts]
     num_tokens: int,
     num_experts: int,
 ):
@@ -139,17 +154,20 @@ def _permute_kernel(
     PERMUTE_SCALE: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
-    pid = tl.program_id(0)
+    pid = tl.program_id(0)  # input token idx
     cur_pos = 0
-    while cur_pos < hidden_size:
+    while cur_pos < hidden_size: # hidden dim position
+        # Load inp and scale
         cur_off = cur_pos + tl.arange(0, BLOCK_SIZE)
         mask = cur_off < hidden_size
         input_off = pid * stride_input_token + cur_off * stride_input_hidden
         inp = tl.load(input_ptr + input_off, mask=mask)
+
         if PERMUTE_SCALE:
             mask_scale = cur_off < scale_hidden_dim
             scale_off = pid * stride_scale_token + cur_off * stride_scale_hidden
             scale = tl.load(scale_ptr + scale_off, mask=mask_scale)
+
         for expert_idx in range(num_experts):
             dst_row = tl.load(row_id_map_ptr + expert_idx * num_tokens + pid)
             if dst_row != -1:
@@ -196,15 +214,23 @@ def permute_with_mask_map(
     hidden_size: int,
     scale_hidden_dim: int,
 ):
+
+    assert inp.is_contiguous(), "Input tensor to permute is NOT contiguous!"
+    assert row_id_map.is_contiguous(), "Input tensor to permute is NOT contiguous!"
+    assert probs.is_contiguous(), "Input tensor to permute is NOT contiguous!"
+    assert scale.is_contiguous(), "Input tensor to permute is NOT contiguous!"
+
     # pylint: disable=missing-function-docstring
-    output = torch.empty((num_out_tokens, hidden_size), dtype=inp.dtype, device="cuda")
+    # JQ: use zeros to avoid NaN after permute kernel
+    # TODO: use empty to avoid perf hurt
+    output = torch.zeros((num_out_tokens, hidden_size), dtype=inp.dtype, device="cuda")
     if probs is not None:
-        permuted_probs = torch.empty((num_out_tokens,), dtype=probs.dtype, device="cuda")
+        permuted_probs = torch.zeros((num_out_tokens,), dtype=probs.dtype, device="cuda")
     else:
         permuted_probs = None
 
     if scale is not None:
-        permuted_scale = torch.empty(
+        permuted_scale = torch.zeros(
             (num_out_tokens, scale_hidden_dim), dtype=scale.dtype, device="cuda"
         )
     else:
@@ -223,10 +249,10 @@ def permute_with_mask_map(
         num_experts,
         hidden_size,
         scale_hidden_dim,
-        inp.stride(0),
-        inp.stride(1),
-        output.stride(0),
-        output.stride(1),
+        inp.stride(0),  # stride_input_token
+        inp.stride(1),  # stride_input_hidden
+        output.stride(0), # stride_output_token
+        output.stride(1), # stride_output_hidden
         probs.stride(0) if probs is not None else None,
         probs.stride(1) if probs is not None else None,
         scale.stride(0) if scale is not None else None,

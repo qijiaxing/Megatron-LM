@@ -288,9 +288,9 @@ def permute(
             tokens, routing_map, num_out_tokens, probs
         )
 
-        logger.debug(f"[FP8 All2All] permute mask map, qx: {list(output[0].shape)}"
-            f", scale: {list(output[1].shape)}, probs: {list(permuted_probs.shape)}"
-            f", row id map: {list(row_id_map.shape)}")
+        # logger.debug(f"[FP8 All2All] permute mask map, qx: {list(output[0].shape)}"
+        #     f", scale: {list(output[1].shape)}, probs: {list(permuted_probs.shape)}"
+        #     f", row id map: {list(row_id_map.shape)}")
 
         # JQ: output is (qx, sx) after permuted
         return output, permuted_probs, row_id_map
