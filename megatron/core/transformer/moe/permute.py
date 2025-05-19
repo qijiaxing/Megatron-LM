@@ -65,6 +65,7 @@ class _moe_permute_mask_map(torch.autograd.Function):
         ctx.num_experts = num_experts
         ctx.num_tokens = num_tokens
         ctx.hidden_size = hidden_size
+        ctx.probs = probs
 
         # JQ: return fp8 tensor
         output = to_float8_tensor(output, permuted_scale)
@@ -115,9 +116,6 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
         restore_shape: Optional[torch.Size],
     ) -> torch.Tensor:
         # pylint: disable=missing-function-docstring
-        if not inp.numel():
-            ctx.merging_probs = merging_probs
-            return inp
 
         if restore_shape is None:
             restore_shape = inp.shape
@@ -127,11 +125,17 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
         with_probs = merging_probs is not None
         if with_probs:
             assert merging_probs.is_cuda, "TransformerEngine needs CUDA."
-
+        ctx.num_experts = num_experts
+        ctx.num_tokens = num_tokens
+        ctx.num_permuted_tokens = inp.size(0)
+        ctx.hidden_size = hidden_size
+        ctx.with_probs = with_probs
+        if not inp.numel():
+            ctx.merging_probs = merging_probs
+            return inp
         # Device check
         assert inp.is_cuda, "TransformerEngine needs CUDA."
         assert row_id_map.is_cuda, "TransformerEngine needs CUDA."
-
         unpermuted_output, _ = unpermute_with_mask_map(
             inp,
             row_id_map,
@@ -146,15 +150,11 @@ class _moe_unpermute_mask_map(torch.autograd.Function):
             ctx.save_for_backward(inp, row_id_map, merging_probs)
         else:
             ctx.save_for_backward(row_id_map)
-        ctx.num_experts = num_experts
-        ctx.num_tokens = num_tokens
-        ctx.num_permuted_tokens = inp.size(0)
-        ctx.hidden_size = hidden_size
-        ctx.with_probs = with_probs
         return unpermuted_output
 
     @staticmethod
     def backward(ctx, unpermuted_act_grad):
+        # print(f'unpermute backward ... ')
         # pylint: disable=missing-function-docstring
         assert is_float8_tensor(unpermuted_act_grad), "[FP8 All2All] Assume unpermute BWD inp is float8 tensor!"
         assert not ctx.with_probs, "Unpermute op NOT support prob!"

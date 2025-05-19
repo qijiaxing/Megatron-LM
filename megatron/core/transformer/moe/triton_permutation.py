@@ -62,13 +62,21 @@ def _row_id_map_pass_2_kernel(
         row_id_map_ptr + pid_m * num_tokens + offset, mask=(offset < num_tokens), other=0
     )
 
-    workspace_off = tl.arange(0, WORKSPACE_LOAD_WIDTH)
-    n_tokens_per_chunk = tl.load(workspace_ptr + workspace_off, mask=workspace_off < chunk_idx)
-    row_id = tl.where(
-        row_id_within_token_block == 0,
-        -1,
-        row_id_within_token_block + tl.sum(n_tokens_per_chunk) - 1,
-    )
+    if WORKSPACE_LOAD_WIDTH > 0:
+        workspace_off = tl.arange(0, WORKSPACE_LOAD_WIDTH)
+        n_tokens_per_chunk = tl.load(workspace_ptr + workspace_off, mask=workspace_off < chunk_idx)
+        row_id = tl.where(
+            row_id_within_token_block == 0,
+            -1,
+            row_id_within_token_block + tl.sum(n_tokens_per_chunk) - 1,
+        )
+    else:
+        row_id = tl.where(
+            row_id_within_token_block == 0,
+            -1,
+            row_id_within_token_block - 1,
+        )
+        
     tl.store(
         row_id_map_ptr + pid_m * num_tokens + offset,
         row_id,
@@ -217,8 +225,9 @@ def permute_with_mask_map(
 
     assert inp.is_contiguous(), "Input tensor to permute is NOT contiguous!"
     assert row_id_map.is_contiguous(), "Input tensor to permute is NOT contiguous!"
-    assert probs.is_contiguous(), "Input tensor to permute is NOT contiguous!"
     assert scale.is_contiguous(), "Input tensor to permute is NOT contiguous!"
+    if probs is not None:
+        assert probs.is_contiguous(), "Input tensor to permute is NOT contiguous!"
 
     # pylint: disable=missing-function-docstring
     # JQ: use zeros to avoid NaN after permute kernel
