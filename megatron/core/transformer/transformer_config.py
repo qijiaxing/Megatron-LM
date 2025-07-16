@@ -29,6 +29,14 @@ except ImportError:
     HAVE_PACKAGING = False
 
 
+import os
+FP8_DPA = int(os.getenv("FP8_DPA", "0"))
+if FP8_DPA > 0:
+    print(f"FP8_DPA enabled!!!")
+FP8_MHA = int(os.getenv("FP8_MHA", "0"))
+if FP8_MHA > 0:
+    print(f"FP8_MHA enabled!!!")
+
 @dataclass
 class TransformerConfig(ModelParallelConfig):
     """Configuration object for megatron-core transformers.
@@ -66,8 +74,8 @@ class TransformerConfig(ModelParallelConfig):
     - list: e.g., [['embedding', 'decoder'], ['decoder', 'decoder', 'decoder', 'loss']].
     - PipelineParallelLayerLayout: a PipelineParallelLayerLayout object.
     If given either a string or a list, it will be transferred into a PipelineParallelLayerLayout
-    in post init. Let i = a * pp_size + b, then layout[i] gives a list of the layers 
-    in the a-th vpp stage and the b-th pp stage, i.e., vpp(0)pp(0), vpp(0)pp(1), ..., 
+    in post init. Let i = a * pp_size + b, then layout[i] gives a list of the layers
+    in the a-th vpp stage and the b-th pp stage, i.e., vpp(0)pp(0), vpp(0)pp(1), ...,
     vpp(i)pp(j), vpp(i)pp(j+1), ..., vpp(-1)pp(-2), vpp(-1)pp(-1).
     In the inner lists of layers, 'embedding' or 'E' denotes the embedding layer, 'loss' or 'L'
     denotes the loss function, and 'decoder' or 't' denotes the transformer decoder layer.
@@ -213,13 +221,13 @@ class TransformerConfig(ModelParallelConfig):
 
     embedding_init_method: Optional[Callable] = None
     """
-    Method to initialize weights of the embedding layer. If None, will be set as described 
+    Method to initialize weights of the embedding layer. If None, will be set as described
     in init_method above.
     """
 
     embedding_init_method_std: Optional[float] = None
     """
-    Standard deviation of the zero mean normal for the default initialization method for the 
+    Standard deviation of the zero mean normal for the default initialization method for the
     embedding layer. If None, will be set to init_method_std.
     """
 
@@ -355,10 +363,10 @@ class TransformerConfig(ModelParallelConfig):
     """When set to False, override FP8 config options and do the wgrad computation
     in higher precision."""
 
-    fp8_dot_product_attention: bool = False
+    fp8_dot_product_attention: bool = bool(FP8_DPA == 1)
     """When set to True, use the FP8 implementation of Dot Product Attention."""
 
-    fp8_multi_head_attention: bool = False
+    fp8_multi_head_attention: bool = bool(FP8_MHA == 1)
     """When set to True, use the FP8 implementation of Multi Head Attention."""
 
     tp_only_amax_red: bool = False
@@ -439,7 +447,7 @@ class TransformerConfig(ModelParallelConfig):
     """Number of selected groups for group-limited routing."""
 
     moe_router_pre_softmax: bool = False
-    """Enable pre-softmax(pre-sigmoid) routing for MoE, which means softmax is before the 
+    """Enable pre-softmax(pre-sigmoid) routing for MoE, which means softmax is before the
     top-k selection.
     By default, softmax is done after top-k."""
 
@@ -467,7 +475,7 @@ class TransformerConfig(ModelParallelConfig):
     The default value 1e-3 is same as that used in DeepSeekV3."""
 
     moe_router_force_load_balancing: bool = False
-    """[Experimental] Force load balancing with random logits for MoE router, supports naive topk 
+    """[Experimental] Force load balancing with random logits for MoE router, supports naive topk
     and group-limited topk. This is an experimental feature and only for benchmark."""
 
     moe_grouped_gemm: bool = False
@@ -618,7 +626,7 @@ class TransformerConfig(ModelParallelConfig):
     """The number of groups used in Mamba layers."""
 
     mamba_num_heads: Optional[int] = None
-    """The number of heads used in Mamba layers. 
+    """The number of heads used in Mamba layers.
     If None, the number of heads will be hidden_size * expand // mamba_head_dim."""
 
     use_mamba_mem_eff_path: bool = True
