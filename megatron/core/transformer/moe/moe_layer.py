@@ -169,7 +169,15 @@ class MoELayer(BaseMoELayer):
         # Initialize CUDA streams for per-expert parallelization
         self.expert_streams = None
         if config.moe_expert_parallel_stream and self.num_local_experts > 1:
-            self.expert_streams = [torch.cuda.Stream() for _ in range(self.num_local_experts)]
+            if torch.cuda.is_available():
+                self.expert_streams = [torch.cuda.Stream() for _ in range(self.num_local_experts)]
+            else:
+                import warnings
+
+                warnings.warn(
+                    "moe_expert_parallel_stream is enabled but CUDA is not available. "
+                    "Stream parallelization will be disabled."
+                )
 
     def router_and_preprocess(self, hidden_states: torch.Tensor):
         """Compute and preprocess token routing for dispatch.
