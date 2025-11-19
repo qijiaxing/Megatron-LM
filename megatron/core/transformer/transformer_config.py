@@ -588,6 +588,11 @@ class TransformerConfig(ModelParallelConfig):
     moe_apply_probs_on_input: bool = False
     """Apply probs on input of experts instead of applying after activation and glu."""
 
+    moe_expert_parallel_stream: bool = False
+    """Use CUDA streams to parallelize each expert's workflow (dispatch -> compute -> combine).
+    When enabled, each local expert runs its dispatch-compute-combine pipeline in its own CUDA stream,
+    allowing workflows to overlap. This is beneficial when there are multiple local experts per GPU."""
+
     ##################
     # Context Parallel
     ##################

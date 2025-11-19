@@ -305,6 +305,70 @@ class GroupedMLP(MegatronModule):
 
         return fc2_output, None
 
+    def forward_single_expert(
+        self,
+        permuted_local_hidden_states: torch.Tensor,
+        num_tokens: int,
+        permuted_probs: torch.Tensor,
+        expert_idx: int,
+    ):
+        """Forward step for a single expert.
+        
+        This method processes tokens for a single expert, useful for per-expert
+        parallelization with CUDA streams.
+        
+        Args:
+            permuted_local_hidden_states: Input tokens for this expert
+            num_tokens: Number of tokens for this expert
+            permuted_probs: Routing probabilities for this expert's tokens
+            expert_idx: Index of the expert to process (0 to num_local_experts-1)
+        
+        Returns:
+            Tuple of (output tensor, None) - bias is not supported
+        """
+        if self.activation_recompute:
+            self.activation_checkpoint = tensor_parallel.CheckpointWithoutOutput()
+
+        if self.config.moe_apply_probs_on_input:
+            assert (
+                self.config.moe_router_topk == 1
+            ), "`moe_apply_probs_on_input` only works with `moe_router_topk`=1."
+            original_dtype = permuted_local_hidden_states.dtype
+            permuted_local_hidden_states = (
+                permuted_probs.unsqueeze(-1) * permuted_local_hidden_states
+            )
+            permuted_local_hidden_states = permuted_local_hidden_states.to(original_dtype)
+            # Probs already applied, so reset to 1.
+            permuted_probs = torch.ones_like(permuted_probs)
+
+        if permuted_local_hidden_states.nelement() != 0 and num_tokens > 0:
+            # Get weights for this specific expert
+            w1 = self.weight1.view(self.num_local_experts, self.config.hidden_size, -1)[expert_idx]
+            w2 = self.weight2.view(self.num_local_experts, -1, self.config.hidden_size)[expert_idx]
+
+            # Process through expert layers
+            fc1_output = torch.matmul(permuted_local_hidden_states, w1)
+            if self.activation_recompute:
+                intermediate_parallel = self.activation_checkpoint.checkpoint(
+                    self.activation_func_with_probs, fc1_output, permuted_probs.unsqueeze(-1)
+                )
+                fc2_output = torch.matmul(intermediate_parallel, w2)
+                self.activation_checkpoint.discard_output_and_register_recompute(fc2_output)
+            else:
+                intermediate_parallel = self.activation_func_with_probs(
+                    fc1_output, permuted_probs.unsqueeze(-1)
+                )
+                fc2_output = torch.matmul(intermediate_parallel, w2)
+        else:
+            # No tokens for this expert - return empty tensor with correct shape
+            fc2_output = torch.empty(
+                0, self.config.hidden_size,
+                dtype=permuted_local_hidden_states.dtype,
+                device=permuted_local_hidden_states.device
+            )
+
+        return fc2_output, None
+
     @expert_dist_ckpt_decorator
     def sharded_state_dict(self, prefix='', sharded_offsets=(), metadata=None):
         """
