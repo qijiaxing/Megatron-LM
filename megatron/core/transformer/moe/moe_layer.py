@@ -247,7 +247,7 @@ class MoELayer(BaseMoELayer):
         This implementation processes experts in separate streams to enable overlap between
         different experts' computation phases. Each expert processes its tokens independently
         in its own stream, then results are synchronized and combined.
-        
+
         Note: This is beneficial when num_local_experts > 1 and when not using grouped GEMM,
         as grouped GEMM already batches all experts efficiently.
         """
@@ -255,13 +255,12 @@ class MoELayer(BaseMoELayer):
         dispatched_input, tokens_per_expert, permuted_probs = (
             self.token_dispatcher.dispatch_postprocess(hidden_states, probs)
         )
-        
+
         # Check if we should use per-expert processing
         use_per_expert = (
-            hasattr(self.experts, 'forward_single_expert') 
-            and not self.config.moe_grouped_gemm
+            hasattr(self.experts, 'forward_single_expert') and not self.config.moe_grouped_gemm
         )
-        
+
         if not use_per_expert:
             # Fall back to standard grouped processing
             expert_output, mlp_bias = self.experts(
@@ -270,17 +269,17 @@ class MoELayer(BaseMoELayer):
             assert mlp_bias is None, f"mlp_bias is not supported for {type(self.token_dispatcher)}"
             output = self.token_dispatcher.combine_preprocess(expert_output)
             return output, mlp_bias
-        
+
         # Split tokens by expert for per-stream processing
         expert_inputs = []
         expert_probs_list = []
         token_offset = 0
-        
+
         for expert_idx in range(self.num_local_experts):
             num_tokens = tokens_per_expert[expert_idx].item()
             if num_tokens > 0:
-                expert_input = dispatched_input[token_offset:token_offset + num_tokens]
-                expert_probs = permuted_probs[token_offset:token_offset + num_tokens]
+                expert_input = dispatched_input[token_offset : token_offset + num_tokens]
+                expert_probs = permuted_probs[token_offset : token_offset + num_tokens]
                 token_offset += num_tokens
             else:
                 # Empty slice for experts with no tokens
@@ -288,38 +287,38 @@ class MoELayer(BaseMoELayer):
                 expert_probs = permuted_probs[0:0]
             expert_inputs.append(expert_input)
             expert_probs_list.append(expert_probs)
-        
+
         # Process each expert in its own CUDA stream
         expert_outputs = []
         main_stream = torch.cuda.current_stream()
-        
+
         for expert_idx in range(self.num_local_experts):
             stream = self.expert_streams[expert_idx]
             with torch.cuda.stream(stream):
                 # Wait for main stream to finish token preparation
                 stream.wait_stream(main_stream)
-                
+
                 # Process this expert
                 expert_input = expert_inputs[expert_idx]
                 expert_probs = expert_probs_list[expert_idx]
                 num_tokens = tokens_per_expert[expert_idx].item()
-                
+
                 # Forward through single expert
                 expert_out, _ = self.experts.forward_single_expert(
                     expert_input, num_tokens, expert_probs, expert_idx
                 )
                 expert_outputs.append(expert_out)
-        
+
         # Synchronize all expert streams back to main stream
         for stream in self.expert_streams:
             main_stream.wait_stream(stream)
-        
+
         # Concatenate expert outputs in the correct order
         expert_output = torch.cat(expert_outputs, dim=0)
-        
+
         # Combine preprocess
         output = self.token_dispatcher.combine_preprocess(expert_output)
-        
+
         return output, None
 
     def combine(self, output: torch.Tensor, shared_expert_output: Optional[torch.Tensor]):
@@ -361,7 +360,7 @@ class MoELayer(BaseMoELayer):
             shared_expert_output = self.shared_experts_compute(hidden_states)
             hidden_states, probs, residual = self.router_and_preprocess(hidden_states)
             dispatched_input, probs = self.dispatch(hidden_states, probs)
-            
+
             # Use streaming execution if enabled and supported
             if self.expert_streams is not None:
                 output, mlp_bias = self.routed_experts_compute_with_streams(
@@ -369,7 +368,7 @@ class MoELayer(BaseMoELayer):
                 )
             else:
                 output, mlp_bias = self.routed_experts_compute(dispatched_input, probs, residual)
-            
+
             output = self.combine(output, shared_expert_output)
             return output, mlp_bias
 

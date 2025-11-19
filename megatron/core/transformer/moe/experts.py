@@ -313,16 +313,16 @@ class GroupedMLP(MegatronModule):
         expert_idx: int,
     ):
         """Forward step for a single expert.
-        
+
         This method processes tokens for a single expert, useful for per-expert
         parallelization with CUDA streams.
-        
+
         Args:
             permuted_local_hidden_states: Input tokens for this expert
             num_tokens: Number of tokens for this expert
             permuted_probs: Routing probabilities for this expert's tokens
             expert_idx: Index of the expert to process (0 to num_local_experts-1)
-        
+
         Returns:
             Tuple of (output tensor, None) - bias is not supported
         """
@@ -362,9 +362,10 @@ class GroupedMLP(MegatronModule):
         else:
             # No tokens for this expert - return empty tensor with correct shape
             fc2_output = torch.empty(
-                0, self.config.hidden_size,
+                0,
+                self.config.hidden_size,
                 dtype=permuted_local_hidden_states.dtype,
-                device=permuted_local_hidden_states.device
+                device=permuted_local_hidden_states.device,
             )
 
         return fc2_output, None
